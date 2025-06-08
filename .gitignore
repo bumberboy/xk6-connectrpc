@@ -1,0 +1,28 @@
+# IDE files
+.idea/
+.vscode/
+
+# Build artifacts
+k6
+dist/
+build/
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log 
