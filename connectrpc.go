@@ -2,6 +2,7 @@
 package connectrpc
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -77,6 +78,7 @@ func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	mi.exports["Client"] = mi.NewClient
 	mi.exports["loadProtos"] = mi.loadProtos
 	mi.exports["loadProtoset"] = mi.loadProtoset
+	mi.exports["loadEmbeddedProtoset"] = mi.loadEmbeddedProtoset
 	mi.defineConstants()
 	mi.exports["Stream"] = mi.stream
 
@@ -131,6 +133,15 @@ func (mi *ModuleInstance) loadProtoset(protosetPath sobek.Value) ([]MethodInfo, 
 	}
 
 	return globalProtoRegistry.loadProtoset(mi.vu, protosetPath.String())
+}
+
+// loadEmbeddedProtoset loads protocol buffer definitions from base64-encoded protoset data into the global registry
+func (mi *ModuleInstance) loadEmbeddedProtoset(protosetData sobek.Value) ([]MethodInfo, error) {
+	if common.IsNullish(protosetData) {
+		return nil, errors.New("protosetData cannot be null or undefined")
+	}
+
+	return globalProtoRegistry.loadEmbeddedProtoset(protosetData.String())
 }
 
 // defineConstants defines the constant variables of the module.
@@ -339,6 +350,33 @@ func (registry *ProtoRegistry) loadProtoset(vu modules.VU, protosetPath string) 
 	fdset := &descriptorpb.FileDescriptorSet{}
 	if err = proto.Unmarshal(fdsetBytes, fdset); err != nil {
 		return nil, fmt.Errorf("couldn't unmarshal protoset file %s: %w", protosetPath, err)
+	}
+
+	methods, err := registry.convertToMethodInfo(fdset)
+	if err != nil {
+		return nil, err
+	}
+
+	registry.methodInfos = append(registry.methodInfos, methods...)
+	registry.loaded = true
+
+	return methods, nil
+}
+
+// loadEmbeddedProtoset loads protocol buffer definitions from base64-encoded protoset data into the global registry
+func (registry *ProtoRegistry) loadEmbeddedProtoset(base64Data string) ([]MethodInfo, error) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	// Decode base64 data
+	fdsetBytes, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't decode base64 protoset data: %w", err)
+	}
+
+	fdset := &descriptorpb.FileDescriptorSet{}
+	if err = proto.Unmarshal(fdsetBytes, fdset); err != nil {
+		return nil, fmt.Errorf("couldn't unmarshal embedded protoset: %w", err)
 	}
 
 	methods, err := registry.convertToMethodInfo(fdset)

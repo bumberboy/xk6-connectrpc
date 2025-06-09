@@ -1,0 +1,11 @@
+version: v2
+managed:
+  enabled: true
+inputs:
+  - module: buf.build/connectrpc/eliza
+plugins:
+  - local: protoc-gen-k6-connectrpc
+    out: gen
+    opt:
+      - output_format=js
+      - external_wrappers=true
