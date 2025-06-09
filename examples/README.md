@@ -14,8 +14,6 @@ This folder contains example k6 scripts demonstrating how to use the xk6-connect
    go install github.com/bumberboy/xk6-connectrpc/protoc-gen-k6-connectrpc@latest
    ```
 
-3. For manual API examples, have a Connect-RPC service running that implements the `clown.proto` interface, or modify the examples to use your own service and proto files.
-
 ## Examples
 
 ### 1. Generated Client Example (`generated-client-example.js`) ⭐ **Recommended**

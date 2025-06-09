@@ -25,7 +25,7 @@ Instead of manually constructing service method paths, loading proto files, and 
 
 ## Installation
 
-Build the plugin:
+Pull repo and build the plugin:
 
 ```bash
 go build -o protoc-gen-k6-connectrpc ./cmd/protoc-gen-k6-connectrpc
@@ -34,7 +34,7 @@ go build -o protoc-gen-k6-connectrpc ./cmd/protoc-gen-k6-connectrpc
 Or install directly:
 
 ```bash
-go install connectrpc.com/connect/cmd/protoc-gen-k6-connectrpc@latest
+go install github.com/bumberboy/xk6-connectrpc/protoc-gen-k6-connectrpc@latest
 ```
 
 Make sure `protoc-gen-k6-connectrpc` is available in your `$PATH`.
@@ -139,15 +139,6 @@ go test ./cmd/protoc-gen-k6-connectrpc/...
 3. Add tests for new functionality
 4. Ensure all tests pass
 5. Submit a pull request
-
-## Compatibility
-
-- **Protocol Buffers**: proto2, proto3, and editions
-- **Connect-RPC**: All versions
-- **xk6-connectrpc**: v0.1.0+
-- **k6**: v0.45.0+ (with JavaScript engine limitations in mind)
-- **Protocols**: Connect, gRPC, gRPC-Web
-- **Buf Schema Registry**: Full support for external modules
 
 ## License
 
