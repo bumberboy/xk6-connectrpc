@@ -25,4 +25,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-*.log 
+*.log
+/protoc-gen-k6-connectrpc/protoc-gen-k6-connectrpc
+.claude

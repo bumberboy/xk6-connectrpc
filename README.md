@@ -4,12 +4,7 @@ A k6 extension that enables load testing of Connect-RPC services using the Conne
 
 ## What's Included
 
-This project contains two main components:
-
-1. **xk6-connectrpc** - The k6 extension for Connect-RPC load testing
-2. **protoc-gen-k6-connectrpc** - A Protocol Buffer compiler plugin that generates k6-friendly JavaScript clients
-
-**🎯 Recommended Approach**: Use `protoc-gen-k6-connectrpc` to generate JavaScript clients for your services. This provides the best developer experience with zero setup required.
+This project contains the **xk6-connectrpc** k6 extension for Connect-RPC load testing.
 
 ## Installation
 
@@ -19,48 +14,9 @@ Build k6 with the connectrpc extension:
 xk6 build --with github.com/bumberboy/xk6-connectrpc@latest
 ```
 
-## Quick Start (Recommended: Generated Clients)
+## Quick Start
 
-### 1. Generate k6 clients from your proto files
-
-See [protoc-gen-k6-connectrpc/README.md](./protoc-gen-k6-connectrpc/README.md) for detailed setup instructions.
-
-```bash
-# Configure buf.gen.yaml and run:
-buf generate
-```
-
-### 2. Use generated clients in your k6 tests
-
-```javascript
-import connectrpc from 'k6/x/connectrpc';
-import { ElizaServiceClient } from './k6/connectrpc/eliza/v1/eliza.k6.js';
-import { check } from 'k6';
-
-export default function () {
-    // Create xk6-connectrpc client
-    const client = new connectrpc.Client();
-    client.connect('https://demo.connectrpc.com');
-    
-    // Use generated client wrapper (proto definitions auto-loaded!)
-    const elizaClient = new ElizaServiceClient(client);
-    
-    const response = elizaClient.say({ 
-        sentence: 'Hello Eliza!' 
-    });
-    
-    check(response, {
-        'eliza responded': (r) => r.status === 200,
-        'has response': (r) => !!r.message?.sentence
-    });
-    
-    client.close();
-}
-```
-
-## Alternative: Raw xk6-connectrpc API
-
-If you prefer to use the extension directly without generated clients:
+### Load proto files and use the xk6-connectrpc API
 
 ```javascript
 import connectrpc from 'k6/x/connectrpc';
@@ -96,13 +52,64 @@ export default function () {
 }
 ```
 
+## Working with Buf Schema Registry
+
+For services published to the buf schema registry, you'll need to export the proto definitions locally first:
+
+### 1. Export proto files from buf schema registry
+
+```bash
+# Export proto definitions to a local directory
+buf export buf.build/your-org/your-module -o ./proto-definitions
+```
+
+This will create a directory structure with all the proto files and their dependencies.
+
+### 2. Load multiple proto files with import paths
+
+```javascript
+import connectrpc from 'k6/x/connectrpc';
+
+// Load proto files with import path and multiple files
+connectrpc.loadProtos(['/path/to/proto-definitions'], 
+    'auth/v2/auth.proto',
+    'session/v2/session.proto', 
+    'verification/v2/verification.proto'
+);
+
+export default function () {
+    const client = new connectrpc.Client();
+    
+    // Reusable connection settings
+    const connectionSettings = {
+        protocol: 'connect',
+        contentType: 'application/proto', // or 'application/json'
+        timeout: '30s'
+    };
+    
+    client.connect('https://your-service.com', connectionSettings);
+    
+    // Use full service method paths
+    const response = client.invoke('/package.v2.ServiceName/MethodName', {
+        // your request data
+    }, {
+        headers: {
+            'Authorization': 'Bearer your-token',
+            'X-Custom-Header': 'value'
+        }
+    });
+    
+    client.close();
+}
+```
+
 ## Examples
 
 See the [examples/](./examples/) directory for complete working examples:
 
-- **[generated-client-example.js](./examples/generated-client-example.js)** - Using generated clients (recommended)
 - **[unary-example.js](./examples/unary-example.js)** - Basic unary RPC calls
-- **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming
+- **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming  
+- **[vchat-auth-flow-example.js](./examples/vchat-auth-flow-example.js)** - Complete authentication flow with multiple services
 
 ## API Reference
 
@@ -112,7 +119,21 @@ See the [examples/](./examples/) directory for complete working examples:
 - **`connectrpc.loadProtoset(protosetPath)`**: Load protoset file (init context only)  
 - **`connectrpc.loadEmbeddedProtoset(base64Data)`**: Load embedded proto definitions (init context only)
 
-> **Note**: Generated clients automatically embed and load proto definitions - no manual loading required!
+#### Loading Proto Files
+
+```javascript
+// Single proto file
+connectrpc.loadProtos([], 'service.proto');
+
+// Multiple proto files with import paths
+connectrpc.loadProtos(['/path/to/proto/root'], 
+    'auth/v2/auth.proto',
+    'session/v2/session.proto'
+);
+
+// Using protoset file (compiled proto definitions)
+connectrpc.loadProtoset('path/to/compiled.protoset');
+```
 
 ### connectrpc.Client
 
@@ -120,6 +141,17 @@ See the [examples/](./examples/) directory for complete working examples:
 - **`connect(url, options)`**: Establishes connection to a Connect-RPC service
 - **`invoke(method, request, params?)`**: Makes unary RPC calls
 - **`close()`**: Closes the client connection
+
+#### Making Requests with Headers
+
+```javascript
+const response = client.invoke('/package.Service/Method', requestData, {
+    headers: {
+        'Authorization': 'Bearer token',
+        'X-Custom-Header': 'value'
+    }
+});
+```
 
 ### connectrpc.Stream
 
@@ -161,19 +193,67 @@ client.connect(url, {
 | `per-iteration` | New connection each iteration   | Connection overhead testing |
 | `per-call`      | New connection each RPC call    | Individual call testing     |
 
+## Advanced Patterns
+
+### Authentication Flows
+
+For authentication flows, use a single client and pass headers per request:
+
+```javascript
+export default function () {
+    const client = new connectrpc.Client();
+    client.connect(baseUrl, connectionSettings);
+    
+    // Step 1: Login without authentication
+    const loginResponse = client.invoke('/auth.Service/Login', credentials);
+    const token = loginResponse.message.accessToken;
+    
+    // Step 2: Use token for authenticated requests
+    const dataResponse = client.invoke('/api.Service/GetData', {}, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    
+    // Step 3: More authenticated requests
+    const userResponse = client.invoke('/user.Service/GetProfile', {}, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    
+    client.close();
+}
+```
+
+### Reusable Connection Settings
+
+Define connection settings once and reuse them:
+
+```javascript
+const connectionSettings = {
+    protocol: 'connect',
+    contentType: 'application/proto',
+    timeout: '3s'
+};
+
+export default function () {
+    const client = new connectrpc.Client();
+    client.connect('https://your-service.com', connectionSettings);
+    // ... rest of your test
+}
+```
+
 ## Best Practices
 
-1. **Use generated clients** for the best developer experience
-2. **Choose appropriate protocols**: `connect` + JSON for modern APIs, `grpc` + protobuf for traditional gRPC
-3. **Use `per-vu` connection strategy** for realistic load testing
-4. **Set `timeout: null`** for streaming connections
-5. **Always validate responses** with k6's `check()` function
-
-## Code Generation
-
-For detailed information about generating k6-compatible JavaScript clients from your proto files, see:
-
-**[protoc-gen-k6-connectrpc/README.md](./protoc-gen-k6-connectrpc/README.md)**
+1. **Load proto files** in the init context using `connectrpc.loadProtos()`
+2. **Export buf modules locally** using `buf export` before testing
+3. **Use import paths** when loading multiple related proto files
+4. **Choose appropriate protocols**: `connect` + JSON for modern APIs, `grpc` + protobuf for traditional gRPC
+5. **Use `per-vu` connection strategy** for realistic load testing
+6. **Set `timeout: null`** for streaming connections
+7. **Always validate responses** with k6's `check()` function
+8. **Clean up connections** with `client.close()` at the end of your test
 
 ## Development
 

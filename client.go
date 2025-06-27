@@ -20,7 +20,6 @@ import (
 
 	"github.com/grafana/sobek"
 	"github.com/jhump/protoreflect/desc" //nolint:staticcheck // FIXME: #4035
-	//nolint:staticcheck // FIXME: #4035
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -210,6 +209,8 @@ func (c *Client) Invoke(
 
 	methodDesc, err := c.getMethodDescriptor(method)
 	if err != nil {
+		// Debug logging
+		c.vu.State().Logger.WithField("method", method).WithError(err).Error("Failed to get method descriptor")
 		return nil, err
 	}
 
@@ -286,6 +287,15 @@ func (c *Client) Invoke(
 	)
 
 	connectReq := connect.NewRequest(requestMessage)
+
+	// First, set connection-level headers from connectParams
+	if connParams.Headers != nil {
+		for key, value := range connParams.Headers {
+			connectReq.Header().Set(key, value)
+		}
+	}
+
+	// Then, set call-level headers from p.Metadata (these can override connection-level headers)
 	for key, value := range p.Metadata {
 		connectReq.Header().Set(key, value)
 	}
@@ -477,7 +487,7 @@ func (c *Client) convertToMethodInfo(fdset *descriptorpb.FileDescriptorSet) ([]M
 }
 
 func walkFileDescriptors(seen map[string]struct{}, fd *desc.FileDescriptor) []*descriptorpb.FileDescriptorProto {
-	fds := []*descriptorpb.FileDescriptorProto{}
+	var fds []*descriptorpb.FileDescriptorProto
 
 	if _, ok := seen[fd.GetName()]; ok {
 		return fds

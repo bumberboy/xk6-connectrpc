@@ -21,8 +21,9 @@ type connectParams struct {
 	TLS                map[string]interface{}
 	Protocol           string
 	ContentType        string
-	HTTPVersion        string // New field for HTTP version control
-	ConnectionStrategy string // New field for connection reuse strategy
+	HTTPVersion        string            // New field for HTTP version control
+	ConnectionStrategy string            // New field for connection reuse strategy
+	Headers            map[string]string // Connection-level headers
 }
 
 type callParams struct {
@@ -37,11 +38,12 @@ func newConnectParams(vu modules.VU, paramsVal sobek.Value) (*connectParams, err
 	params := &connectParams{
 		IsPlaintext:        false,
 		UseReflection:      false,
-		Timeout:            nil,                // Default to infinite timeout (protocol compliant)
-		Protocol:           "connect",          // Default to Connect protocol
-		ContentType:        "application/json", // Default content type
-		HTTPVersion:        "2",                // Default to HTTP/2 for best compatibility
-		ConnectionStrategy: "per-vu",           // Default to persistent connection per VU
+		Timeout:            nil,                     // Default to infinite timeout (protocol compliant)
+		Protocol:           "connect",               // Default to Connect protocol
+		ContentType:        "application/json",      // Default content type
+		HTTPVersion:        "2",                     // Default to HTTP/2 for best compatibility
+		ConnectionStrategy: "per-vu",                // Default to persistent connection per VU
+		Headers:            make(map[string]string), // Initialize empty headers map
 	}
 
 	if paramsVal == nil || sobek.IsUndefined(paramsVal) || sobek.IsNull(paramsVal) {
@@ -105,6 +107,14 @@ func newConnectParams(vu modules.VU, paramsVal sobek.Value) (*connectParams, err
 				return nil, fmt.Errorf("invalid connectionStrategy: %s. Must be 'per-vu', 'per-iteration', or 'per-call'", strategy)
 			}
 			params.ConnectionStrategy = strategy
+		case "headers":
+			headers := paramsObj.Get(k)
+			if !sobek.IsUndefined(headers) && !sobek.IsNull(headers) {
+				err := processMetadata(headers, params.Headers, rt)
+				if err != nil {
+					return nil, fmt.Errorf("invalid headers object: %w", err)
+				}
+			}
 		}
 	}
 
