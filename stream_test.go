@@ -62,8 +62,12 @@ func TestStream_InvalidMethod(t *testing.T) {
 
 	ts.ToVUContext()
 
+	// Start test server
+	srv := connectrpc.NewTestServer(false)
+	defer srv.Close()
+
 	_, err = ts.Run(`
-		client.connect('example.com:443', {
+		client.connect('` + srv.URL + `', {
 			protocol: 'connect',
 			plaintext: true
 		});
@@ -94,10 +98,14 @@ func TestStreamEnvelopeFraming(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("StreamCreationAndEventHandlers", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test that streams can be created and event handlers attached
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -128,10 +136,14 @@ func TestStreamEnvelopeFraming(t *testing.T) {
 	})
 
 	t.Run("MessageEnvelopeFraming", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test the message envelope framing mechanism
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -172,6 +184,10 @@ func TestStreamEnvelopeFraming(t *testing.T) {
 	})
 
 	t.Run("StreamWithDifferentProtocols", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test envelope framing with different protocols
 		_, err = ts.Run(`
 			var protocols = ['connect', 'grpc', 'grpc-web'];
@@ -182,7 +198,7 @@ func TestStreamEnvelopeFraming(t *testing.T) {
 				for (var j = 0; j < contentTypes.length; j++) {
 					try {
 						var client = new connectrpc.Client();
-						client.connect('example.com:443', {
+						client.connect('` + srv.URL + `', {
 							protocol: protocols[i],
 							contentType: contentTypes[j],
 							plaintext: true
@@ -226,10 +242,14 @@ func TestStreamConnectionStrategies(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("PerVUStrategy", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test per-vu strategy (default)
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true,
 				connectionStrategy: 'per-vu'
@@ -244,10 +264,14 @@ func TestStreamConnectionStrategies(t *testing.T) {
 	})
 
 	t.Run("PerCallStrategy", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test per-call strategy
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true,
 				connectionStrategy: 'per-call'
@@ -262,10 +286,14 @@ func TestStreamConnectionStrategies(t *testing.T) {
 	})
 
 	t.Run("PerIterationStrategy", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test per-iteration strategy
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true,
 				connectionStrategy: 'per-iteration'
@@ -310,10 +338,14 @@ func TestStreamTimeoutHandling(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("InfiniteTimeout", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test infinite timeout (default)
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -327,10 +359,14 @@ func TestStreamTimeoutHandling(t *testing.T) {
 	})
 
 	t.Run("ExplicitInfiniteTimeout", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test explicit infinite timeout (null)
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -346,10 +382,14 @@ func TestStreamTimeoutHandling(t *testing.T) {
 	})
 
 	t.Run("FiniteTimeout", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test finite timeout
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -365,10 +405,14 @@ func TestStreamTimeoutHandling(t *testing.T) {
 	})
 
 	t.Run("ZeroTimeout", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test zero timeout (should be treated as infinite)
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -384,10 +428,14 @@ func TestStreamTimeoutHandling(t *testing.T) {
 	})
 
 	t.Run("InvalidTimeout", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test invalid timeout format
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -419,10 +467,14 @@ func TestStreamErrorHandling(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("WriteToClosedStream", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test writing to a closed stream
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -441,10 +493,14 @@ func TestStreamErrorHandling(t *testing.T) {
 	})
 
 	t.Run("InvalidMessageMarshaling", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test invalid message that can't be marshaled
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -466,10 +522,14 @@ func TestStreamErrorHandling(t *testing.T) {
 	})
 
 	t.Run("MultipleStreamEnd", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test calling end() multiple times
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -489,10 +549,14 @@ func TestStreamErrorHandling(t *testing.T) {
 	})
 
 	t.Run("NullAndUndefinedData", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test writing null and undefined data
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -521,10 +585,14 @@ func TestStreamErrorHandling(t *testing.T) {
 	})
 
 	t.Run("EventListenerExceptions", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test that exceptions in event listeners don't crash the stream
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -567,10 +635,14 @@ func TestStreamEventEmission(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("MultipleEventListeners", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test multiple listeners for the same event
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -609,10 +681,14 @@ func TestStreamEventEmission(t *testing.T) {
 	})
 
 	t.Run("EventListenerWithNonFunction", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test adding non-function as event listener
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -640,10 +716,14 @@ func TestStreamEventEmission(t *testing.T) {
 	})
 
 	t.Run("EventDataParsing", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test that data events properly parse JSON and handle parse failures
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -667,10 +747,14 @@ func TestStreamEventEmission(t *testing.T) {
 	})
 
 	t.Run("EventTypesAndOrdering", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test different event types and their ordering
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -751,10 +835,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	ts.ToVUContext()
 
 	t.Run("CustomHeaders", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test custom headers/metadata
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -775,10 +863,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("MetadataAlias", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test metadata as alias for headers
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -798,10 +890,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("EmptyHeaders", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test empty headers
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -818,10 +914,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("JSONContentType", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test JSON content type
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				contentType: 'application/json',
 				plaintext: true
@@ -858,10 +958,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("GRPCProtocolWithJSON", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test gRPC protocol with JSON content type
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'grpc',
 				contentType: 'application/json',
 				plaintext: true
@@ -876,10 +980,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("GRPCWebProtocol", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test gRPC-Web protocol
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'grpc-web',
 				contentType: 'application/protobuf',
 				plaintext: true
@@ -894,10 +1002,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("InvalidHeaderValues", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
 		// Test invalid header values
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -1118,10 +1230,14 @@ func TestStreamMetrics(t *testing.T) {
 	ts := newTestState(t)
 	ts.ToVUContext()
 
+	// Start test server
+	srv := connectrpc.NewTestServer(false)
+	defer srv.Close()
+
 	// Test that stream metrics are properly registered
 	val, err := ts.Run(`
 		var client = new connectrpc.Client();
-		client.connect('example.com:443', {
+		client.connect('` + srv.URL + `', {
 			protocol: 'connect',
 			plaintext: true
 		});
