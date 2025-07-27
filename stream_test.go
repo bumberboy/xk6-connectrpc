@@ -705,10 +705,14 @@ func TestStreamEventEmission(t *testing.T) {
 	})
 
 	t.Run("EventEmissionWithEmptyData", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false) // checkMetadata = false for this test
+		defer srv.Close()
+
 		// Test event emission with empty or malformed data
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				plaintext: true
 			});
@@ -832,10 +836,14 @@ func TestStreamHeadersAndContentTypes(t *testing.T) {
 	})
 
 	t.Run("ProtobufContentType", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false) // checkMetadata = false for this test
+		defer srv.Close()
+
 		// Test protobuf content type
 		_, err = ts.Run(`
 			var client = new connectrpc.Client();
-			client.connect('example.com:443', {
+			client.connect('` + srv.URL + `', {
 				protocol: 'connect',
 				contentType: 'application/protobuf',
 				plaintext: true

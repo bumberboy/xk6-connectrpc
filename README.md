@@ -109,7 +109,6 @@ See the [examples/](./examples/) directory for complete working examples:
 
 - **[unary-example.js](./examples/unary-example.js)** - Basic unary RPC calls
 - **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming  
-- **[vchat-auth-flow-example.js](./examples/vchat-auth-flow-example.js)** - Complete authentication flow with multiple services
 
 ## API Reference
 
@@ -275,3 +274,6 @@ Contributions welcome! Please ensure:
 - Compatibility with all supported protocols and content types
 - Comprehensive error handling and test coverage
 - Updated documentation for new features
+
+## AI Use
+Most of the code and documentation in this repository were vibe coded.
