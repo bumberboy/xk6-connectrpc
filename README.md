@@ -243,6 +243,98 @@ export default function () {
 }
 ```
 
+## Error Handling
+
+xk6-connectrpc provides comprehensive error information for debugging Connect RPC failures:
+
+### Error Response Structure
+
+When RPC calls fail, the response includes detailed error information:
+
+```javascript
+const response = client.invoke('/service.Service/Method', request);
+
+if (response.status !== 200) {
+    console.log('Error details:', {
+        status: response.status,           // HTTP status (400, 404, 500, etc.)
+        code: response.message.code,       // Connect error code ('invalid_argument', 'not_found', etc.)  
+        message: response.message.message, // Full error message
+        details: response.message.details  // Structured error details (array)
+    });
+}
+```
+
+### Error Details
+
+Error details provide structured information about failures:
+
+```javascript
+// Example error response
+{
+    "message": {
+        "code": "invalid_argument",
+        "message": "invalid_argument: validation failed for field 'email'",
+        "details": [
+            {
+                "type": "google.rpc.BadRequest",
+                "value": {
+                    "fieldViolations": [
+                        {
+                            "field": "email", 
+                            "description": "must be a valid email address"
+                        }
+                    ]
+                },
+                "bytes": [8, 1, 18, 5, ...]  // Raw protobuf bytes
+            }
+        ]
+    },
+    "status": 400,
+    "headers": {...},
+    "trailers": {...}
+}
+```
+
+### Common Error Handling Pattern
+
+```javascript
+export default function () {
+    const client = new connectrpc.Client();
+    client.connect(baseUrl, connectionSettings);
+    
+    const response = client.invoke('/auth.Service/Login', credentials);
+    
+    // Check for errors
+    if (response.status !== 200) {
+        console.error('RPC failed:', {
+            httpStatus: response.status,
+            errorCode: response.message.code,
+            errorMessage: response.message.message
+        });
+        
+        // Process structured error details if available
+        if (response.message.details && response.message.details.length > 0) {
+            response.message.details.forEach((detail, i) => {
+                console.error(`Error detail ${i + 1}:`, {
+                    type: detail.type,
+                    value: detail.value
+                });
+            });
+        }
+        
+        return; // Skip rest of test
+    }
+    
+    // Success case
+    check(response, {
+        'login successful': (r) => r.status === 200,
+        'has access token': (r) => !!r.message.accessToken
+    });
+    
+    client.close();
+}
+```
+
 ## Best Practices
 
 1. **Load proto files** in the init context using `connectrpc.loadProtos()`

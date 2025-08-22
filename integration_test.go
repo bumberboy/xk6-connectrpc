@@ -399,8 +399,8 @@ func TestErrorDetailsIncludedInResponse(t *testing.T) {
 
 
 		// Verify the error response structure
-		if (response.status !== 0) {
-			throw new Error('Expected status 0 for connect error, got: ' + response.status);
+		if (response.status !== 400) {
+			throw new Error('Expected status 400 for invalid_argument error, got: ' + response.status);
 		}
 
 		if (!response.message) {
@@ -430,6 +430,40 @@ func TestErrorDetailsIncludedInResponse(t *testing.T) {
 
 		if (response.message.details.length === 0) {
 			throw new Error('Expected at least one error detail');
+		}
+
+		// Verify the actual content of the error detail
+		var firstDetail = response.message.details[0];
+		
+		if (!firstDetail.type) {
+			throw new Error('Expected error detail to have a type field');
+		}
+
+		// The test server adds a FailRequest detail with the error code
+		if (firstDetail.type !== 'k6.connectrpc.ping.v1.FailRequest') {
+			throw new Error('Expected error detail type to be "k6.connectrpc.ping.v1.FailRequest", got: ' + firstDetail.type);
+		}
+
+		if (!firstDetail.value) {
+			throw new Error('Expected error detail to have a value field');
+		}
+
+		if (typeof firstDetail.value !== 'object') {
+			throw new Error('Expected error detail value to be an object, got: ' + typeof firstDetail.value);
+		}
+
+		// The FailRequest protobuf message should contain the code field
+		if (!firstDetail.value.code && firstDetail.value.code !== 0) {
+			throw new Error('Expected error detail value to have a code field');
+		}
+
+		if (firstDetail.value.code !== 3) {
+			throw new Error('Expected error detail code to be 3, got: ' + firstDetail.value.code);
+		}
+
+		// Verify bytes field exists (raw protobuf bytes)
+		if (!firstDetail.bytes) {
+			throw new Error('Expected error detail to have a bytes field');
 		}
 
 

@@ -335,14 +335,30 @@ func (c *Client) Invoke(
 
 		if errors.As(err, &connectErr) {
 			// Convert Connect error codes to HTTP status codes
-			//httpStatus = connectCodeToHTTPStatus(connectErr.Code())
+			httpStatus = connectCodeToHTTPStatus(connectErr.Code())
 			message = connectErr.Error() // Use full error message like streaming code
 
 			// Create error response object
 			errorObj := rt.NewObject()
 			errorObj.Set("code", rt.ToValue(connectErr.Code().String()))
 			errorObj.Set("message", rt.ToValue(message))
-			errorObj.Set("details", rt.ToValue(connectErr.Details())) // Include error details
+
+			// Serialize error details properly
+			details := connectErr.Details()
+			serializedDetails := make([]map[string]interface{}, len(details))
+			for i, detail := range details {
+				serializedDetail := make(map[string]interface{})
+				serializedDetail["type"] = detail.Type()
+				serializedDetail["bytes"] = detail.Bytes()
+
+				// Try to get the protobuf value
+				if value, err := detail.Value(); err == nil {
+					serializedDetail["value"] = value
+				}
+
+				serializedDetails[i] = serializedDetail
+			}
+			errorObj.Set("details", rt.ToValue(serializedDetails))
 
 			responseObject.Set("message", errorObj)
 			responseObject.Set("status", rt.ToValue(httpStatus))
@@ -537,6 +553,49 @@ func (c *Client) createMetricTags(method, protocol, contentType string) MetricTa
 		Procedure:   procedure,
 		Protocol:    protocol,
 		ContentType: contentType,
+	}
+}
+
+// connectCodeToHTTPStatus converts Connect error codes to HTTP status codes
+// Based on the Connect protocol specification
+func connectCodeToHTTPStatus(code connect.Code) int {
+	switch code {
+	case 0: // OK
+		return 200
+	case connect.CodeCanceled:
+		return 408 // Request Timeout
+	case connect.CodeUnknown:
+		return 500 // Internal Server Error
+	case connect.CodeInvalidArgument:
+		return 400 // Bad Request
+	case connect.CodeDeadlineExceeded:
+		return 504 // Gateway Timeout
+	case connect.CodeNotFound:
+		return 404 // Not Found
+	case connect.CodeAlreadyExists:
+		return 409 // Conflict
+	case connect.CodePermissionDenied:
+		return 403 // Forbidden
+	case connect.CodeResourceExhausted:
+		return 429 // Too Many Requests
+	case connect.CodeFailedPrecondition:
+		return 412 // Precondition Failed
+	case connect.CodeAborted:
+		return 409 // Conflict
+	case connect.CodeOutOfRange:
+		return 400 // Bad Request
+	case connect.CodeUnimplemented:
+		return 501 // Not Implemented
+	case connect.CodeInternal:
+		return 500 // Internal Server Error
+	case connect.CodeUnavailable:
+		return 503 // Service Unavailable
+	case connect.CodeDataLoss:
+		return 500 // Internal Server Error
+	case connect.CodeUnauthenticated:
+		return 401 // Unauthorized
+	default:
+		return 500 // Internal Server Error
 	}
 }
 
