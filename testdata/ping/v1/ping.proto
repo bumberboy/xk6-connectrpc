@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/descriptor.proto";
+
 // The k6.connectrpc.ping.v1 package contains a test service for the k6 connectrpc extension
 package k6.connectrpc.ping.v1;
 

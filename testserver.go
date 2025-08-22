@@ -229,3 +229,17 @@ func NewTestServer(checkMetadata bool) *httptest.Server {
 func NewTLSTestServer(checkMetadata bool) *httptest.Server {
 	return newTLSTestServer(checkMetadata)
 }
+
+// NewTestServerWithErrorDetails creates a test server with error details enabled for testing
+func NewTestServerWithErrorDetails(checkMetadata bool) *httptest.Server {
+	server := pingServer{
+		checkMetadata:       checkMetadata,
+		includeErrorDetails: true,
+	}
+
+	mux := http.NewServeMux()
+	path, handler := pingv1connect.NewPingServiceHandler(server)
+	mux.Handle(path, handler)
+
+	return httptest.NewServer(mux)
+}

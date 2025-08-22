@@ -108,7 +108,7 @@ export default function () {
 See the [examples/](./examples/) directory for complete working examples:
 
 - **[unary-example.js](./examples/unary-example.js)** - Basic unary RPC calls
-- **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming  
+- **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming
 
 ## API Reference
 

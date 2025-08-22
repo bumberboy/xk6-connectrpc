@@ -336,12 +336,13 @@ func (c *Client) Invoke(
 		if errors.As(err, &connectErr) {
 			// Convert Connect error codes to HTTP status codes
 			//httpStatus = connectCodeToHTTPStatus(connectErr.Code())
-			message = connectErr.Message()
+			message = connectErr.Error() // Use full error message like streaming code
 
 			// Create error response object
 			errorObj := rt.NewObject()
 			errorObj.Set("code", rt.ToValue(connectErr.Code().String()))
 			errorObj.Set("message", rt.ToValue(message))
+			errorObj.Set("details", rt.ToValue(connectErr.Details())) // Include error details
 
 			responseObject.Set("message", errorObj)
 			responseObject.Set("status", rt.ToValue(httpStatus))
@@ -354,6 +355,7 @@ func (c *Client) Invoke(
 
 			errorObj := rt.NewObject()
 			errorObj.Set("message", rt.ToValue(message))
+			// No details for non-Connect errors
 
 			responseObject.Set("message", errorObj)
 			responseObject.Set("status", rt.ToValue(httpStatus))

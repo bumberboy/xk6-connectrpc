@@ -206,17 +206,23 @@ func (s *stream) on(event string, listener sobek.Value) {
 // write sends a message to the stream
 func (s *stream) write(data sobek.Value) {
 	if s.writingState == closed {
-		common.Throw(s.vu.Runtime(), errors.New("cannot write to a closed stream"))
+		if rt := s.vu.Runtime(); rt != nil {
+			common.Throw(rt, errors.New("cannot write to a closed stream"))
+		}
 		return
 	}
 
 	// Convert the data to bytes
 	var msgBytes []byte
 	if data != nil && !sobek.IsUndefined(data) && !sobek.IsNull(data) {
-		obj := data.ToObject(s.vu.Runtime())
+		rt := s.vu.Runtime()
+		if rt == nil {
+			return
+		}
+		obj := data.ToObject(rt)
 		jsonBytes, err := obj.MarshalJSON()
 		if err != nil {
-			common.Throw(s.vu.Runtime(), fmt.Errorf("failed to marshal message: %w", err))
+			common.Throw(rt, fmt.Errorf("failed to marshal message: %w", err))
 			return
 		}
 		msgBytes = jsonBytes
@@ -226,7 +232,11 @@ func (s *stream) write(data sobek.Value) {
 	select {
 	case s.writeQueueCh <- message{msg: msgBytes}:
 	case <-s.done:
-		common.Throw(s.vu.Runtime(), errors.New("stream is closed"))
+		// Check if runtime is available before throwing
+		if rt := s.vu.Runtime(); rt != nil {
+			common.Throw(rt, errors.New("stream is closed"))
+		}
+		return
 	}
 }
 
@@ -347,15 +357,19 @@ func (s *stream) readLoop() {
 // emitData emits a 'data' event with the received data
 func (s *stream) emitData(data []byte) {
 	s.tq.Queue(func() error {
+		rt := s.vu.Runtime()
+		if rt == nil {
+			return nil
+		}
 		// Try to parse as JSON and convert to JS object
 		var result interface{}
 		if len(data) > 0 {
 			if err := json.Unmarshal(data, &result); err != nil {
 				// If JSON parsing fails, emit as string
-				s.eventListeners.emit("data", s.vu.Runtime().ToValue(string(data)))
+				s.eventListeners.emit("data", rt.ToValue(string(data)))
 			} else {
 				// Emit as parsed object
-				s.eventListeners.emit("data", s.vu.Runtime().ToValue(result))
+				s.eventListeners.emit("data", rt.ToValue(result))
 			}
 		}
 		return nil
@@ -388,6 +402,9 @@ func (s *stream) emitError(err error) {
 
 	s.tq.Queue(func() error {
 		rt := s.vu.Runtime()
+		if rt == nil {
+			return nil
+		}
 		var errValue sobek.Value
 
 		// Check if it's a connect.Error

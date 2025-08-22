@@ -1,11 +1,27 @@
 package connectrpc_test
 
 import (
+	"context"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/bumberboy/xk6-connectrpc"
+	pingv1 "github.com/bumberboy/xk6-connectrpc/testdata/ping/v1"
+	"github.com/bumberboy/xk6-connectrpc/testdata/ping/v1/pingv1connect"
 	"github.com/stretchr/testify/require"
 )
+
+// simplePingServer implements the ping service for HTTP method testing
+type simplePingServer struct {
+	pingv1connect.UnimplementedPingServiceHandler
+}
+
+func (s *simplePingServer) Ping(ctx context.Context, req *connect.Request[pingv1.PingRequest]) (*connect.Response[pingv1.PingResponse], error) {
+	return connect.NewResponse(&pingv1.PingResponse{
+		Number: req.Msg.GetNumber(),
+		Text:   req.Msg.GetText(),
+	}), nil
+}
 
 // TestIntegrationBasicPingWithServer tests basic functionality using our test server
 func TestIntegrationBasicPingWithServer(t *testing.T) {
@@ -345,6 +361,79 @@ func TestIntegrationTLSConfiguration(t *testing.T) {
 
 		client.close();
 		'tls-success';
+	`)
+	require.NoError(t, err)
+}
+
+// TestErrorDetailsIncludedInResponse tests that Connect RPC error details are properly included in the response
+func TestErrorDetailsIncludedInResponse(t *testing.T) {
+	t.Parallel()
+
+	// Start test server with error details enabled
+	srv := connectrpc.NewTestServerWithErrorDetails(false)
+	defer srv.Close()
+
+	ts := newTestState(t)
+
+	// Load the ping service proto file globally
+	_, err := ts.Run(`
+		const protoFile = './testdata/ping/v1/ping.proto';
+		connectrpc.loadProtos([], protoFile);
+	`)
+	require.NoError(t, err)
+
+	ts.ToVUContext()
+
+	// Test that error details are included in unary RPC error responses
+	_, err = ts.Run(`
+		var client = new connectrpc.Client();
+		var connected = client.connect('` + srv.URL + `', {});
+		if (!connected) {
+			throw new Error('Failed to connect to test server');
+		}
+
+		// Call the Fail endpoint with a specific error code to trigger an error with details
+		var response = client.invoke('/k6.connectrpc.ping.v1.PingService/Fail', {
+			code: 3 // INVALID_ARGUMENT
+		});
+
+
+		// Verify the error response structure
+		if (response.status !== 0) {
+			throw new Error('Expected status 0 for connect error, got: ' + response.status);
+		}
+
+		if (!response.message) {
+			throw new Error('Expected error message object');
+		}
+
+		if (!response.message.code) {
+			throw new Error('Expected error code in response.message.code');
+		}
+
+		if (response.message.code !== 'invalid_argument') {
+			throw new Error('Expected error code to be "invalid_argument", got: ' + response.message.code);
+		}
+
+		if (!response.message.message) {
+			throw new Error('Expected error message text in response.message.message');
+		}
+
+		// Most importantly, verify that error details are included
+		if (!response.message.details) {
+			throw new Error('Expected error details in response.message.details');
+		}
+
+		if (!Array.isArray(response.message.details)) {
+			throw new Error('Expected error details to be an array, got: ' + typeof response.message.details);
+		}
+
+		if (response.message.details.length === 0) {
+			throw new Error('Expected at least one error detail');
+		}
+
+
+		client.close();
 	`)
 	require.NoError(t, err)
 }
