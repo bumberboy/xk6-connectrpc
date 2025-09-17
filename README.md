@@ -184,6 +184,8 @@ client.connect(url, {
 | `grpc`     | gRPC protocol over HTTP/2  | JSON, protobuf                   |
 | `grpc-web` | gRPC-Web protocol          | JSON, protobuf                   |
 
+> **Note**: HTTP GET requests are not supported in k6 extensions due to Connect library limitations with dynamic protobuf clients. All requests use HTTP POST regardless of method idempotency.
+
 ### Connection Strategies
 
 | Strategy        | Description                     | Use Case                    |
