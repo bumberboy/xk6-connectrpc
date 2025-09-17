@@ -261,44 +261,60 @@ func (s *stream) writeLoop() {
 		select {
 		case msg := <-s.writeQueueCh:
 			if msg.isClosing {
-				if s.connectStream != nil {
-					s.connectStream.CloseRequest() // Use the official API
+				// Process any remaining messages before closing
+				for {
+					select {
+					case pendingMsg := <-s.writeQueueCh:
+						if pendingMsg.isClosing {
+							continue // Skip additional closing messages
+						}
+						s.processMessage(pendingMsg)
+					default:
+						// No more pending messages
+						if s.connectStream != nil {
+							s.connectStream.CloseRequest() // Use the official API
+						}
+						return
+					}
 				}
-				return
 			}
-
-			requestMessage := dynamicpb.NewMessage(s.methodDescriptor.Input())
-			if err := protojson.Unmarshal(msg.msg, requestMessage); err != nil {
-				s.logger.WithError(err).Error("Failed to unmarshal message for sending")
-				s.emitError(err)
-				s.shutdown() // Assuming a shutdown function exists
-				return
-			}
-
-			if err := s.connectStream.Send(requestMessage); err != nil {
-				s.logger.WithError(err).Error("Failed to write to stream")
-				s.emitError(err)
-				s.shutdown()
-				return
-			}
-
-			// Record sent message metrics
-			if s.instanceMetrics != nil {
-				protocol := "connect"
-				contentType := "application/json"
-				if s.client.connectParams != nil {
-					protocol = s.client.connectParams.Protocol
-					contentType = s.client.connectParams.ContentType
-				}
-				tags := s.client.createMetricTags(s.method, protocol, contentType)
-				tags.Type = "stream"
-				messageSize := int64(len(msg.msg))
-				s.instanceMetrics.recordStreamMessage(s.vu.Context(), s.vu, tags, "sent", messageSize)
-			}
+			s.processMessage(msg)
 
 		case <-s.done:
 			return
 		}
+	}
+}
+
+// processMessage handles the actual sending of a message
+func (s *stream) processMessage(msg message) {
+	requestMessage := dynamicpb.NewMessage(s.methodDescriptor.Input())
+	if err := protojson.Unmarshal(msg.msg, requestMessage); err != nil {
+		s.logger.WithError(err).Error("Failed to unmarshal message for sending")
+		s.emitError(err)
+		s.shutdown() // Assuming a shutdown function exists
+		return
+	}
+
+	if err := s.connectStream.Send(requestMessage); err != nil {
+		s.logger.WithError(err).Error("Failed to write to stream")
+		s.emitError(err)
+		s.shutdown()
+		return
+	}
+
+	// Record sent message metrics
+	if s.instanceMetrics != nil {
+		protocol := "connect"
+		contentType := "application/json"
+		if s.client.connectParams != nil {
+			protocol = s.client.connectParams.Protocol
+			contentType = s.client.connectParams.ContentType
+		}
+		tags := s.client.createMetricTags(s.method, protocol, contentType)
+		tags.Type = "stream"
+		messageSize := int64(len(msg.msg))
+		s.instanceMetrics.recordStreamMessage(s.vu.Context(), s.vu, tags, "sent", messageSize)
 	}
 }
 
