@@ -17,7 +17,7 @@ export const options = {
 
 export default async function () {
     const client = new connectrpc.Client();
-    
+
     // Connect with streaming-optimized settings
     const connected = client.connect('https://your-service.com');
 
@@ -25,9 +25,12 @@ export default async function () {
         throw new Error('Failed to connect to service');
     }
 
-    // Run streaming test
+    // Run standard bidirectional streaming test
     await testBidirectionalStream(client);
-    
+
+    // Demonstrate early termination with close()
+    await testEarlyTermination(client);
+
     client.close();
 }
 
@@ -68,4 +71,48 @@ function testBidirectionalStream(client) {
         // Close the client side of the stream
         stream.end();
     });
-} 
+}
+
+function testEarlyTermination(client) {
+    return new Promise((resolve, reject) => {
+        const stream = new connectrpc.Stream(client, '/clown.v1.ClownService/ClownGreetStream');
+
+        const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+        let responseCount = 0;
+        let earlyTermination = false;
+
+        stream.on('data', function (response) {
+            console.log(`Early termination test - Received greeting: ${response.greeting}`);
+            responseCount++;
+
+            // Terminate stream early after receiving 2 responses
+            if (responseCount >= 2) {
+                console.log('Terminating stream early with close()');
+                earlyTermination = true;
+                stream.close(); // Immediately close entire stream
+                resolve();
+            }
+        });
+
+        stream.on('error', function (err) {
+            console.error(`Early termination stream error: ${err.code} - ${err.message}`);
+            reject(err);
+        });
+
+        stream.on('end', function () {
+            if (!earlyTermination) {
+                console.log(`Stream ended naturally, received ${responseCount} responses`);
+                resolve();
+            }
+        });
+
+        // Send names to the stream
+        names.forEach((name) => {
+            stream.write({ name: name });
+        });
+
+        // Note: Using end() here would only close write side
+        // But we want to demonstrate close() for immediate termination
+        stream.end();
+    });
+}

@@ -69,6 +69,9 @@ type stream struct {
 
 	// Timing for metrics
 	streamStartTime time.Time
+
+	// Track if stream was explicitly closed
+	explicitlyClosed bool
 }
 
 // defineStream defines the sobek.Object that is given to js to interact with the Stream
@@ -81,6 +84,9 @@ func defineStream(rt *sobek.Runtime, s *stream) {
 
 	must(rt, s.obj.DefineDataProperty(
 		"end", rt.ToValue(s.end), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+
+	must(rt, s.obj.DefineDataProperty(
+		"close", rt.ToValue(s.close), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 }
 
 func (s *stream) beginStream(p *callParams) error {
@@ -255,6 +261,20 @@ func (s *stream) end() {
 	}
 }
 
+// close terminates the entire stream immediately (both read and write sides)
+func (s *stream) close() {
+	// Mark that this was an explicit close
+	s.explicitlyClosed = true
+
+	// Cancel the timeout context if it exists
+	if s.timeoutCancel != nil {
+		s.timeoutCancel()
+	}
+
+	// Force close the stream by calling shutdown directly
+	s.shutdown()
+}
+
 // writeLoop handles writing messages to the stream
 func (s *stream) writeLoop() {
 	for {
@@ -336,6 +356,26 @@ func (s *stream) readLoop() {
 				if strings.Contains(connectErr.Message(), "EOF") {
 					s.emitEnd()
 					return
+				}
+			}
+
+			// Check for context cancellation (from explicit close())
+			if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled") {
+				if s.explicitlyClosed {
+					// This was an explicit close(), emit end instead of error
+					s.emitEnd()
+					return
+				}
+			}
+
+			// Check for Connect-wrapped context cancellation
+			if connectErr := new(connect.Error); errors.As(err, &connectErr) {
+				if connectErr.Code().String() == "canceled" || strings.Contains(connectErr.Message(), "context canceled") {
+					if s.explicitlyClosed {
+						// This was an explicit close(), emit end instead of error
+						s.emitEnd()
+						return
+					}
 				}
 			}
 

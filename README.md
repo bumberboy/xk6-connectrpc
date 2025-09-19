@@ -109,6 +109,7 @@ See the [examples/](./examples/) directory for complete working examples:
 
 - **[unary-example.js](./examples/unary-example.js)** - Basic unary RPC calls
 - **[streaming-example.js](./examples/streaming-example.js)** - Bidirectional streaming
+- **[server-side-streaming.js](./examples/server-side-streaming.js)** - Server-side streaming with response validation
 
 ## API Reference
 
@@ -156,7 +157,10 @@ const response = client.invoke('/package.Service/Method', requestData, {
 
 - **Constructor**: `new connectrpc.Stream(client, method)` - Creates a bidirectional stream
 - **Event Handlers**: `stream.on('data'|'error'|'end', callback)`
-- **Methods**: `stream.write(data)`, `stream.end()`
+- **Methods**:
+  - `stream.write(data)` - Send data to the stream
+  - `stream.end()` - Close the write side of the stream (server continues sending)
+  - `stream.close()` - Immediately terminate the entire stream (both read and write)
 
 ## Configuration
 

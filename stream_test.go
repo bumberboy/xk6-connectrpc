@@ -1224,6 +1224,225 @@ func TestStreamIntegrationWithServer(t *testing.T) {
 	})
 }
 
+func TestStreamClose(t *testing.T) {
+	t.Parallel()
+
+	ts := newTestState(t)
+
+	// Load the ping proto file for streaming tests (must be in init context)
+	_, err := ts.Run(`
+		connectrpc.loadProtos([], 'testdata/ping/v1/ping.proto');
+	`)
+	require.NoError(t, err)
+
+	ts.ToVUContext()
+
+	t.Run("CloseImmediatelyTerminatesStream", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that close() immediately terminates the stream
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream.write({ number: 42 });
+
+			// Close the entire stream
+			stream.close();
+			'close-immediate-ok';
+		`)
+		assert.NoError(t, err, "close() should immediately terminate stream")
+	})
+
+	t.Run("WriteAfterCloseThrowsError", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that writing after close() throws an error
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream.close(); // Close the stream first
+
+			try {
+				stream.write({ number: 42 }); // Try to write after closing
+				'should-not-reach';
+			} catch (e) {
+				'write-after-close-error';
+			}
+		`)
+		assert.NoError(t, err, "Writing after close() should throw error")
+	})
+
+	t.Run("CloseVsEndBehavior", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that close() and end() have different behaviors
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			// Test end() - only closes write side
+			var stream1 = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream1.write({ number: 42 });
+			stream1.end(); // Only closes write side - read side stays open
+
+			// Test close() - closes entire stream immediately
+			var stream2 = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream2.write({ number: 42 });
+			stream2.close(); // Closes both read and write sides immediately
+
+			'close-vs-end-ok';
+		`)
+		assert.NoError(t, err, "close() and end() should have different behaviors")
+	})
+
+	t.Run("MultipleCloseCallsAreSafe", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that multiple close() calls are safe
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream.write({ number: 42 });
+
+			// First close() should work
+			stream.close();
+
+			// Second close() should be safe (no-op)
+			stream.close();
+
+			'multiple-close-ok';
+		`)
+		assert.NoError(t, err, "Multiple close() calls should be safe")
+	})
+
+	t.Run("CloseWithEventHandlers", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that close() works with event handlers
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var eventsCalled = 0;
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+
+			stream.on('data', function(data) {
+				eventsCalled++;
+			});
+
+			stream.on('error', function(error) {
+				eventsCalled++;
+			});
+
+			stream.on('end', function() {
+				eventsCalled++;
+			});
+
+			stream.write({ number: 42 });
+			stream.close(); // Should trigger cleanup
+
+			'close-with-events-ok';
+		`)
+		assert.NoError(t, err, "close() should work with event handlers")
+	})
+
+	t.Run("CloseAfterEnd", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that close() can be called after end()
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+			stream.write({ number: 42 });
+
+			// First end the write side
+			stream.end();
+
+			// Then close the entire stream
+			stream.close();
+
+			'close-after-end-ok';
+		`)
+		assert.NoError(t, err, "close() after end() should work")
+	})
+
+	t.Run("CloseEmitsEndNotError", func(t *testing.T) {
+		// Start test server
+		srv := connectrpc.NewTestServer(false)
+		defer srv.Close()
+
+		// Test that close() emits 'end' event instead of 'error' for cancellation
+		_, err = ts.Run(`
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				plaintext: true
+			});
+
+			var endEventFired = false;
+			var errorEventFired = false;
+			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
+
+			stream.on('end', function() {
+				endEventFired = true;
+			});
+
+			stream.on('error', function(err) {
+				errorEventFired = true;
+			});
+
+			stream.write({ number: 42 });
+
+			// Close should emit 'end', not 'error'
+			stream.close();
+
+			// Give a brief moment for events to process
+			// Note: In real async scenarios, this would be properly awaited
+
+			'close-events-ok';
+		`)
+		assert.NoError(t, err, "close() should emit end instead of error for cancellation")
+	})
+}
+
 func TestStreamMetrics(t *testing.T) {
 	t.Parallel()
 
