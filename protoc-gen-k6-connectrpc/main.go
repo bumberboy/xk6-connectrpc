@@ -159,8 +159,27 @@ func main() {
 		SupportedFeatures: proto.Uint64(uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)),
 	}
 
-	// Generate streaming-wrappers.js if external wrappers are enabled and JS is being generated
+	// Check if any file to generate has services and needs external wrappers
+	needsExternalWrappers := false
 	if cfg.ExternalWrappers && cfg.StreamingWrappers && cfg.ShouldGenerateJS() {
+		for _, fileName := range request.GetFileToGenerate() {
+			// Find the file descriptor
+			var fileDesc *descriptorpb.FileDescriptorProto
+			for _, file := range request.GetProtoFile() {
+				if file.GetName() == fileName {
+					fileDesc = file
+					break
+				}
+			}
+			if fileDesc != nil && hasStreamingMethods(fileDesc) {
+				needsExternalWrappers = true
+				break
+			}
+		}
+	}
+
+	// Generate streaming-wrappers.js once if needed
+	if needsExternalWrappers {
 		if err := generateStreamingWrappersFile(cfg, response); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to generate streaming-wrappers.js: %v\n", err)
 			os.Exit(1)
@@ -377,6 +396,18 @@ func toCamelCase(s string) string {
 	}
 	// Convert first letter to lowercase
 	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// hasStreamingMethods checks if any service in the file has streaming methods
+func hasStreamingMethods(fileDesc *descriptorpb.FileDescriptorProto) bool {
+	for _, service := range fileDesc.GetService() {
+		for _, method := range service.GetMethod() {
+			if method.GetClientStreaming() || method.GetServerStreaming() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func executeJavaScriptTemplate(data *TemplateData) (string, error) {

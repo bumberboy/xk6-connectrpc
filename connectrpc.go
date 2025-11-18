@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bufbuild/protocompile"
 	"github.com/grafana/sobek"
-	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/mstoykov/k6-taskqueue-lib/taskqueue"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
@@ -293,24 +293,49 @@ func (registry *ProtoRegistry) loadProtos(vu modules.VU, importPaths []string, f
 		importPaths[i] = strings.TrimPrefix(s, "file://")
 	}
 
-	parser := protoparse.Parser{
-		ImportPaths:      importPaths,
-		InferImportPaths: false,
-		Accessor: protoparse.FileAccessor(func(filename string) (io.ReadCloser, error) {
+	// Create a custom resolver that uses k6's file system
+	resolver := protocompile.WithStandardImports(&protocompile.SourceResolver{
+		Accessor: func(filename string) (io.ReadCloser, error) {
 			absFilePath := initEnv.GetAbsFilePath(filename)
 			return initEnv.FileSystems["file"].Open(absFilePath)
-		}),
+		},
+		ImportPaths: importPaths,
+	})
+
+	compiler := &protocompile.Compiler{
+		Resolver: resolver,
 	}
 
-	fds, err := parser.ParseFiles(filenames...)
+	// Compile the proto files
+	fds, err := compiler.Compile(vu.Context(), filenames...)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build FileDescriptorSet from compiled files
 	fdset := &descriptorpb.FileDescriptorSet{}
 	seen := make(map[string]struct{})
+
+	// Walk through all compiled files and their dependencies
+	var walkFiles func(protoreflect.FileDescriptor)
+	walkFiles = func(fd protoreflect.FileDescriptor) {
+		name := fd.Path()
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+
+		fdset.File = append(fdset.File, protodesc.ToFileDescriptorProto(fd))
+
+		// Process dependencies
+		imports := fd.Imports()
+		for i := 0; i < imports.Len(); i++ {
+			walkFiles(imports.Get(i).FileDescriptor)
+		}
+	}
+
 	for _, fd := range fds {
-		fdset.File = append(fdset.File, walkFileDescriptors(seen, fd)...)
+		walkFiles(fd)
 	}
 
 	methods, err := registry.convertToMethodInfo(fdset)

@@ -139,7 +139,8 @@ connectrpc.loadProtoset('path/to/compiled.protoset');
 
 - **Constructor**: `new connectrpc.Client()` - Creates a new client instance
 - **`connect(url, options)`**: Establishes connection to a Connect-RPC service
-- **`invoke(method, request, params?)`**: Makes unary RPC calls
+- **`invoke(method, request, params?)`**: Makes synchronous unary RPC calls
+- **`asyncInvoke(method, request, params?)`**: Makes asynchronous unary RPC calls (returns a Promise)
 - **`close()`**: Closes the client connection
 
 #### Making Requests with Headers
@@ -149,6 +150,32 @@ const response = client.invoke('/package.Service/Method', requestData, {
     headers: {
         'Authorization': 'Bearer token',
         'X-Custom-Header': 'value'
+    }
+});
+```
+
+#### Asynchronous Requests
+
+Use `asyncInvoke()` to make non-blocking RPC calls that return Promises:
+
+```javascript
+// Single async call
+const promise = client.asyncInvoke('/package.Service/Method', requestData);
+const response = await promise;
+
+// Multiple parallel async calls
+const promises = [
+    client.asyncInvoke('/auth.Service/Login', credentials),
+    client.asyncInvoke('/user.Service/GetProfile', {}),
+    client.asyncInvoke('/data.Service/GetStats', {})
+];
+
+const [loginRes, profileRes, statsRes] = await Promise.all(promises);
+
+// With headers
+const response = await client.asyncInvoke('/package.Service/Method', requestData, {
+    headers: {
+        'Authorization': 'Bearer token'
     }
 });
 ```
@@ -227,6 +254,48 @@ export default function () {
         }
     });
     
+    client.close();
+}
+```
+
+### Parallel Async Requests
+
+Use `asyncInvoke()` to make multiple RPC calls in parallel for better performance:
+
+```javascript
+export default function () {
+    const client = new connectrpc.Client();
+    client.connect(baseUrl, connectionSettings);
+
+    // Login first
+    const loginResponse = await client.asyncInvoke('/auth.Service/Login', credentials);
+    const token = loginResponse.message.accessToken;
+
+    // Fetch multiple resources in parallel
+    const [userProfile, userSettings, userStats] = await Promise.all([
+        client.asyncInvoke('/user.Service/GetProfile', {}, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        client.asyncInvoke('/user.Service/GetSettings', {}, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        client.asyncInvoke('/analytics.Service/GetStats', {}, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+    ]);
+
+    check(userProfile, {
+        'profile loaded': (r) => r.status === 200
+    });
+
+    check(userSettings, {
+        'settings loaded': (r) => r.status === 200
+    });
+
+    check(userStats, {
+        'stats loaded': (r) => r.status === 200
+    });
+
     client.close();
 }
 ```
@@ -349,8 +418,9 @@ export default function () {
 4. **Choose appropriate protocols**: `connect` + JSON for modern APIs, `grpc` + protobuf for traditional gRPC
 5. **Use `per-vu` connection strategy** for realistic load testing
 6. **Set `timeout: null`** for streaming connections
-7. **Always validate responses** with k6's `check()` function
-8. **Clean up connections** with `client.close()` at the end of your test
+7. **Use `asyncInvoke()` with `Promise.all()`** for parallel requests to improve test performance
+8. **Always validate responses** with k6's `check()` function
+9. **Clean up connections** with `client.close()` at the end of your test
 
 ## Development
 

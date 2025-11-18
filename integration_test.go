@@ -471,3 +471,199 @@ func TestErrorDetailsIncludedInResponse(t *testing.T) {
 	`)
 	require.NoError(t, err)
 }
+
+// TestAsyncInvokeBasicFunctionality tests that asyncInvoke works correctly
+func TestAsyncInvokeBasicFunctionality(t *testing.T) {
+	t.Parallel()
+
+	srv := connectrpc.NewTestServer(false)
+	defer srv.Close()
+
+	ts := newTestState(t)
+
+	// Load the ping service proto file globally
+	_, err := ts.Run(`
+		const protoFile = './testdata/ping/v1/ping.proto';
+		connectrpc.loadProtos([], protoFile);
+	`)
+	require.NoError(t, err)
+
+	ts.ToVUContext()
+
+	// Test asyncInvoke with single call
+	_, err = ts.Run(`
+		(async function() {
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				contentType: 'application/json',
+				plaintext: true
+			});
+
+			// Test single async call
+			const promise = client.asyncInvoke('/k6.connectrpc.ping.v1.PingService/Ping', {
+				number: 100,
+				text: 'async test'
+			});
+
+			// Verify it returns a promise
+			if (typeof promise.then !== 'function') {
+				throw new Error('asyncInvoke should return a Promise');
+			}
+
+			// Await the response
+			const response = await promise;
+
+			if (response.status !== 200) {
+				throw new Error('Expected status 200, got ' + response.status);
+			}
+
+			if (!response.message) {
+				throw new Error('No response message received');
+			}
+
+			if (response.message.number !== 100) {
+				throw new Error('Expected number 100, got ' + response.message.number);
+			}
+
+			if (response.message.text !== 'async test') {
+				throw new Error('Expected text "async test", got ' + response.message.text);
+			}
+
+			client.close();
+			return 'async-success';
+		})();
+	`)
+	require.NoError(t, err)
+}
+
+// TestAsyncInvokeParallelCalls tests that multiple asyncInvoke calls work in parallel
+func TestAsyncInvokeParallelCalls(t *testing.T) {
+	t.Parallel()
+
+	srv := connectrpc.NewTestServer(false)
+	defer srv.Close()
+
+	ts := newTestState(t)
+
+	// Load the ping service proto file globally
+	_, err := ts.Run(`
+		const protoFile = './testdata/ping/v1/ping.proto';
+		connectrpc.loadProtos([], protoFile);
+	`)
+	require.NoError(t, err)
+
+	ts.ToVUContext()
+
+	// Test multiple parallel asyncInvoke calls
+	_, err = ts.Run(`
+		(async function() {
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				contentType: 'application/json',
+				plaintext: true
+			});
+
+			// Make multiple parallel async calls
+			const promises = [
+				client.asyncInvoke('/k6.connectrpc.ping.v1.PingService/Ping', {
+					number: 1,
+					text: 'call 1'
+				}),
+				client.asyncInvoke('/k6.connectrpc.ping.v1.PingService/Ping', {
+					number: 2,
+					text: 'call 2'
+				}),
+				client.asyncInvoke('/k6.connectrpc.ping.v1.PingService/Ping', {
+					number: 3,
+					text: 'call 3'
+				})
+			];
+
+			// Wait for all to complete
+			const responses = await Promise.all(promises);
+
+			if (responses.length !== 3) {
+				throw new Error('Expected 3 responses, got ' + responses.length);
+			}
+
+			// Verify all responses
+			for (let i = 0; i < responses.length; i++) {
+				const response = responses[i];
+				const expectedNumber = i + 1;
+				const expectedText = 'call ' + expectedNumber;
+
+				if (response.status !== 200) {
+					throw new Error('Response ' + i + ' expected status 200, got ' + response.status);
+				}
+
+				if (response.message.number !== expectedNumber) {
+					throw new Error('Response ' + i + ' expected number ' + expectedNumber + ', got ' + response.message.number);
+				}
+
+				if (response.message.text !== expectedText) {
+					throw new Error('Response ' + i + ' expected text "' + expectedText + '", got ' + response.message.text);
+				}
+			}
+
+			client.close();
+			return 'parallel-success';
+		})();
+	`)
+	require.NoError(t, err)
+}
+
+// TestAsyncInvokeWithHeaders tests that asyncInvoke works with custom headers
+func TestAsyncInvokeWithHeaders(t *testing.T) {
+	t.Parallel()
+
+	srv := connectrpc.NewTestServer(false)
+	defer srv.Close()
+
+	ts := newTestState(t)
+
+	// Load the ping service proto file globally
+	_, err := ts.Run(`
+		const protoFile = './testdata/ping/v1/ping.proto';
+		connectrpc.loadProtos([], protoFile);
+	`)
+	require.NoError(t, err)
+
+	ts.ToVUContext()
+
+	// Test asyncInvoke with headers
+	_, err = ts.Run(`
+		(async function() {
+			var client = new connectrpc.Client();
+			client.connect('` + srv.URL + `', {
+				protocol: 'connect',
+				contentType: 'application/json',
+				plaintext: true
+			});
+
+			// Test async call with custom headers
+			const response = await client.asyncInvoke('/k6.connectrpc.ping.v1.PingService/Ping', {
+				number: 999,
+				text: 'with headers'
+			}, {
+				headers: {
+					'X-Custom-Header': 'test-value',
+					'Authorization': 'Bearer test-token'
+				}
+			});
+
+			if (response.status !== 200) {
+				throw new Error('Expected status 200, got ' + response.status);
+			}
+
+			if (!response.message) {
+				throw new Error('No response message received');
+			}
+
+			client.close();
+			return 'headers-success';
+		})();
+	`)
+	require.NoError(t, err)
+}

@@ -35,7 +35,7 @@ const (
 	DefaultIncludeMocks      = false
 	DefaultIncludeValidation = true
 	DefaultStreamingWrappers = true
-	DefaultExternalWrappers  = true
+	DefaultExternalWrappers  = false
 )
 
 // RegisterFlags registers all configuration flags and returns a Config pointer.

@@ -19,7 +19,6 @@ import (
 	"go.k6.io/k6/js/modules"
 
 	"github.com/grafana/sobek"
-	"github.com/jhump/protoreflect/desc" //nolint:staticcheck // FIXME: #4035
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -421,23 +420,84 @@ func (c *Client) Invoke(
 	return responseObject, nil
 }
 
+// rpcResult holds the raw result of an RPC call without sobek objects
+type rpcResult struct {
+	responseJSON []byte
+	httpStatus   int
+	headers      map[string][]string
+	trailers     map[string][]string
+	err          error
+	connectErr   *connect.Error
+	reqSize      int64
+	respSize     int64
+	duration     time.Duration
+}
+
 // AsyncInvoke creates and calls a unary RPC by fully qualified method name asynchronously
 func (c *Client) AsyncInvoke(
 	method string,
 	req sobek.Value,
 	params sobek.Value,
 ) (*sobek.Promise, error) {
-	promise, resolve, reject := c.vu.Runtime().NewPromise()
+	rt := c.vu.Runtime()
+	promise, resolve, _ := rt.NewPromise()
+
+	// IMPORTANT: Extract all data from sobek Values BEFORE spawning goroutine
+	// The sobek runtime is NOT thread-safe and cannot be accessed from other goroutines
+
+	// Pre-process parameters in the main VU goroutine
+	state := c.vu.State()
+	if state == nil {
+		return nil, common.NewInitContextError("invoking a ConnectRPC method in the init context is not supported")
+	}
+
+	method = sanitizeMethodName(method)
+
+	methodDesc, err := c.getMethodDescriptor(method)
+	if err != nil {
+		return nil, err
+	}
+
+	p, err := newCallParams(c.vu, params)
+	if err != nil {
+		return nil, fmt.Errorf("invalid connectrpc.invoke() parameters: %w", err)
+	}
+
+	// Marshal the request to JSON in the main goroutine
+	reqJSON, err := req.ToObject(rt).MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request object: %w", err)
+	}
+
+	// Set tags for metrics
+	p.SetSystemTags(state, c.addr, method)
+
+	// Store connection params protocol and content type for metrics (accessed in goroutine)
+	connParams := c.connectParams
 
 	callback := c.vu.RegisterCallback()
 	go func() {
-		res, err := c.Invoke(method, req, params)
+		// Do the RPC call in the goroutine without touching the runtime
+		result := c.doUnaryRPC(method, methodDesc, reqJSON, p)
 
+		// Record metrics in the goroutine (doesn't touch runtime)
+		if c.metrics != nil {
+			tags := c.createMetricTags(method, connParams.Protocol, connParams.ContentType)
+			tags.Type = "unary"
+			c.metrics.recordUnaryRequest(c.vu.Context(), c.vu, result.duration, result.reqSize, result.respSize, tags, result.err)
+		}
+
+		// Convert the raw result to a sobek object in the callback (main goroutine)
 		callback(func() error {
-			if err != nil {
-				return reject(err)
+			responseObj := c.convertRPCResultToObject(result)
+
+			if result.err != nil && result.connectErr == nil {
+				// For non-Connect errors, we still return the response object (k6 pattern)
+				// but we could also reject the promise
+				return resolve(responseObj)
 			}
-			return resolve(res)
+
+			return resolve(responseObj)
 		})
 	}()
 
@@ -455,6 +515,249 @@ func (c *Client) Close() error {
 	c.httpClient = nil
 
 	return nil
+}
+
+// doUnaryRPC performs the actual RPC call without touching the sobek runtime
+// This method is safe to call from a goroutine
+func (c *Client) doUnaryRPC(
+	method string,
+	methodDesc protoreflect.MethodDescriptor,
+	reqJSON []byte,
+	p *callParams,
+) *rpcResult {
+	result := &rpcResult{
+		reqSize: int64(len(reqJSON)),
+	}
+
+	// Get or create HTTP client based on connection strategy
+	var httpClient *http.Client
+	var err error
+
+	if c.connectionStrategy == "per-call" {
+		httpClient, err = c.createHTTPClient(c.connectParams, c.addr)
+		if err != nil {
+			result.err = fmt.Errorf("failed to create HTTP client for per-call strategy: %w", err)
+			result.httpStatus = 500
+			return result
+		}
+		defer httpClient.CloseIdleConnections()
+	} else if c.connectionStrategy == "per-iteration" {
+		state := c.vu.State()
+		currentIterationID := state.Iteration
+		if c.lastIterationID != currentIterationID {
+			if c.httpClient != nil {
+				c.httpClient.CloseIdleConnections()
+			}
+			httpClient, err = c.createHTTPClient(c.connectParams, c.addr)
+			if err != nil {
+				result.err = fmt.Errorf("failed to create HTTP client for per-iteration strategy: %w", err)
+				result.httpStatus = 500
+				return result
+			}
+			c.httpClient = httpClient
+			c.lastIterationID = currentIterationID
+		} else {
+			httpClient = c.httpClient
+		}
+	} else {
+		httpClient = c.httpClient
+	}
+
+	// Prepare the dynamic request message from JSON
+	requestMessage := dynamicpb.NewMessage(methodDesc.Input())
+	if err := protojson.Unmarshal(reqJSON, requestMessage); err != nil {
+		result.err = fmt.Errorf("failed to unmarshal JSON into dynamic protobuf message: %w", err)
+		result.httpStatus = 500
+		return result
+	}
+
+	// Prepare client options
+	clientOptions := []connect.ClientOption{
+		connect.WithSchema(methodDesc),
+		connect.WithResponseInitializer(func(spec connect.Spec, msg any) error {
+			dynamic, ok := msg.(*dynamicpb.Message)
+			if !ok {
+				return nil
+			}
+			desc, ok := spec.Schema.(protoreflect.MethodDescriptor)
+			if !ok {
+				return fmt.Errorf("invalid schema type %T for %T message", spec.Schema, dynamic)
+			}
+			if spec.IsClient {
+				*dynamic = *dynamicpb.NewMessage(desc.Output())
+			} else {
+				*dynamic = *dynamicpb.NewMessage(desc.Input())
+			}
+			return nil
+		}),
+	}
+
+	// Add protocol-specific options
+	connParams := c.connectParams
+	switch connParams.Protocol {
+	case "grpc":
+		clientOptions = append(clientOptions, connect.WithGRPC())
+	case "grpc-web":
+		clientOptions = append(clientOptions, connect.WithGRPCWeb())
+	case "connect":
+		// Default, no additional option needed
+	}
+
+	// Add JSON codec if needed
+	if connParams.ContentType == "application/json" {
+		clientOptions = append(clientOptions, connect.WithProtoJSON())
+	}
+
+	// Create client
+	procedureString := method
+	url := c.baseURL + procedureString
+	dynamicClient := connect.NewClient[dynamicpb.Message, dynamicpb.Message](
+		httpClient,
+		url,
+		clientOptions...,
+	)
+
+	connectReq := connect.NewRequest(requestMessage)
+
+	// Set connection-level headers
+	if connParams.Headers != nil {
+		for key, value := range connParams.Headers {
+			connectReq.Header().Set(key, value)
+		}
+	}
+
+	// Set call-level headers (can override connection-level)
+	for key, value := range p.Metadata {
+		connectReq.Header().Set(key, value)
+	}
+
+	// Make the call with timeout
+	var ctx context.Context
+	var cancel context.CancelFunc
+	callTimeout := time.Duration(0)
+	if p.Timeout != nil {
+		callTimeout = *p.Timeout
+	}
+
+	if callTimeout > 0 {
+		ctx, cancel = context.WithTimeout(c.vu.Context(), callTimeout)
+		defer cancel()
+	} else {
+		ctx = c.vu.Context()
+	}
+
+	// Record start time
+	requestStart := time.Now()
+	resp, err := dynamicClient.CallUnary(ctx, connectReq)
+	result.duration = time.Since(requestStart)
+
+	if err != nil {
+		result.err = err
+		// Check if it's a Connect error
+		var connectErr *connect.Error
+		if errors.As(err, &connectErr) {
+			result.connectErr = connectErr
+			result.httpStatus = connectCodeToHTTPStatus(connectErr.Code())
+			result.headers = connectErr.Meta()
+			result.trailers = connectErr.Meta()
+		} else {
+			// Non-Connect error (network, timeout, etc.)
+			result.httpStatus = 500
+			result.headers = make(map[string][]string)
+			result.trailers = make(map[string][]string)
+		}
+		return result
+	}
+
+	// Marshal successful response
+	responseJSON, err := protojson.Marshal(resp.Msg)
+	if err != nil {
+		result.err = fmt.Errorf("failed to marshal dynamic response to JSON: %w", err)
+		result.httpStatus = 500
+		return result
+	}
+
+	result.responseJSON = responseJSON
+	result.respSize = int64(len(responseJSON))
+	result.httpStatus = 200
+	result.headers = resp.Header()
+	result.trailers = resp.Trailer()
+
+	return result
+}
+
+// convertRPCResultToObject converts an rpcResult to a sobek Object
+// This method must be called from the main VU goroutine as it accesses the runtime
+func (c *Client) convertRPCResultToObject(result *rpcResult) *sobek.Object {
+	rt := c.vu.Runtime()
+	responseObject := rt.NewObject()
+
+	if result.err != nil {
+		// Handle error case
+		var message string
+		if result.connectErr != nil {
+			// Connect RPC error
+			message = result.connectErr.Error()
+
+			errorObj := rt.NewObject()
+			errorObj.Set("code", rt.ToValue(result.connectErr.Code().String()))
+			errorObj.Set("message", rt.ToValue(message))
+
+			// Serialize error details
+			details := result.connectErr.Details()
+			serializedDetails := make([]map[string]interface{}, len(details))
+			for i, detail := range details {
+				serializedDetail := make(map[string]interface{})
+				serializedDetail["type"] = detail.Type()
+				serializedDetail["bytes"] = detail.Bytes()
+
+				if value, err := detail.Value(); err == nil {
+					serializedDetail["value"] = value
+				}
+
+				serializedDetails[i] = serializedDetail
+			}
+			errorObj.Set("details", rt.ToValue(serializedDetails))
+
+			responseObject.Set("message", errorObj)
+		} else {
+			// Non-Connect error
+			message = result.err.Error()
+
+			errorObj := rt.NewObject()
+			errorObj.Set("message", rt.ToValue(message))
+
+			responseObject.Set("message", errorObj)
+		}
+
+		responseObject.Set("status", rt.ToValue(result.httpStatus))
+		responseObject.Set("headers", rt.ToValue(result.headers))
+		responseObject.Set("trailers", rt.ToValue(result.trailers))
+
+		return responseObject
+	}
+
+	// Success case
+	messageVal, err := rt.RunString("(" + string(result.responseJSON) + ")")
+	if err != nil {
+		// If we can't parse the JSON, create an error response
+		errorObj := rt.NewObject()
+		errorObj.Set("message", rt.ToValue(fmt.Sprintf("Failed to parse response JSON: %v", err)))
+
+		responseObject.Set("message", errorObj)
+		responseObject.Set("status", rt.ToValue(500))
+		responseObject.Set("headers", rt.ToValue(result.headers))
+		responseObject.Set("trailers", rt.ToValue(result.trailers))
+
+		return responseObject
+	}
+
+	responseObject.Set("message", messageVal)
+	responseObject.Set("status", rt.ToValue(result.httpStatus))
+	responseObject.Set("headers", rt.ToValue(result.headers))
+	responseObject.Set("trailers", rt.ToValue(result.trailers))
+
+	return responseObject
 }
 
 // MethodInfo holds information on any parsed method descriptors that can be used by the Sobek VM
@@ -502,23 +805,6 @@ func (c *Client) convertToMethodInfo(fdset *descriptorpb.FileDescriptorSet) ([]M
 	})
 
 	return rtn, nil
-}
-
-func walkFileDescriptors(seen map[string]struct{}, fd *desc.FileDescriptor) []*descriptorpb.FileDescriptorProto {
-	var fds []*descriptorpb.FileDescriptorProto
-
-	if _, ok := seen[fd.GetName()]; ok {
-		return fds
-	}
-	seen[fd.GetName()] = struct{}{}
-	fds = append(fds, fd.AsFileDescriptorProto())
-
-	for _, dep := range fd.GetDependencies() {
-		deps := walkFileDescriptors(seen, dep)
-		fds = append(fds, deps...)
-	}
-
-	return fds
 }
 
 // getMethodDescriptor sanitizes and gets ConnectRPC method descriptor or an error if not found
