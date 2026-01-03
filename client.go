@@ -20,9 +20,7 @@ import (
 
 	"github.com/grafana/sobek"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
@@ -37,7 +35,6 @@ type Client struct {
 	connectParams      *connectParams // Store connection params for per-call strategy
 
 	// Connection tracking
-	connectionCount int64
 	lastIterationID int64 // Track iteration for per-iteration strategy
 }
 
@@ -339,8 +336,8 @@ func (c *Client) Invoke(
 
 			// Create error response object
 			errorObj := rt.NewObject()
-			errorObj.Set("code", rt.ToValue(connectErr.Code().String()))
-			errorObj.Set("message", rt.ToValue(message))
+			must(rt, errorObj.Set("code", rt.ToValue(connectErr.Code().String())))
+			must(rt, errorObj.Set("message", rt.ToValue(message)))
 
 			// Serialize error details properly
 			details := connectErr.Details()
@@ -357,25 +354,25 @@ func (c *Client) Invoke(
 
 				serializedDetails[i] = serializedDetail
 			}
-			errorObj.Set("details", rt.ToValue(serializedDetails))
+			must(rt, errorObj.Set("details", rt.ToValue(serializedDetails)))
 
-			responseObject.Set("message", errorObj)
-			responseObject.Set("status", rt.ToValue(httpStatus))
-			responseObject.Set("headers", rt.ToValue(connectErr.Meta()))
-			responseObject.Set("trailers", rt.ToValue(connectErr.Meta())) // Connect errors use Meta for both
+			must(rt, responseObject.Set("message", errorObj))
+			must(rt, responseObject.Set("status", rt.ToValue(httpStatus)))
+			must(rt, responseObject.Set("headers", rt.ToValue(connectErr.Meta())))
+			must(rt, responseObject.Set("trailers", rt.ToValue(connectErr.Meta()))) // Connect errors use Meta for both
 		} else {
 			// Non-Connect errors (network, timeout, etc.)
 			httpStatus = 500 // Internal Server Error
 			message = err.Error()
 
 			errorObj := rt.NewObject()
-			errorObj.Set("message", rt.ToValue(message))
+			must(rt, errorObj.Set("message", rt.ToValue(message)))
 			// No details for non-Connect errors
 
-			responseObject.Set("message", errorObj)
-			responseObject.Set("status", rt.ToValue(httpStatus))
-			responseObject.Set("headers", rt.ToValue(map[string]string{}))
-			responseObject.Set("trailers", rt.ToValue(map[string]string{}))
+			must(rt, responseObject.Set("message", errorObj))
+			must(rt, responseObject.Set("status", rt.ToValue(httpStatus)))
+			must(rt, responseObject.Set("headers", rt.ToValue(map[string]string{})))
+			must(rt, responseObject.Set("trailers", rt.ToValue(map[string]string{})))
 		}
 
 		// Record error metrics
@@ -405,10 +402,10 @@ func (c *Client) Invoke(
 		return nil, err
 	}
 
-	responseObject.Set("message", messageVal)
-	responseObject.Set("status", rt.ToValue(200)) // HTTP OK status for successful RPC
-	responseObject.Set("headers", rt.ToValue(resp.Header()))
-	responseObject.Set("trailers", rt.ToValue(resp.Trailer()))
+	must(rt, responseObject.Set("message", messageVal))
+	must(rt, responseObject.Set("status", rt.ToValue(200))) // HTTP OK status for successful RPC
+	must(rt, responseObject.Set("headers", rt.ToValue(resp.Header())))
+	must(rt, responseObject.Set("trailers", rt.ToValue(resp.Trailer())))
 
 	// Record successful unary request metrics
 	if c.metrics != nil {
@@ -700,8 +697,8 @@ func (c *Client) convertRPCResultToObject(result *rpcResult) *sobek.Object {
 			message = result.connectErr.Error()
 
 			errorObj := rt.NewObject()
-			errorObj.Set("code", rt.ToValue(result.connectErr.Code().String()))
-			errorObj.Set("message", rt.ToValue(message))
+			must(rt, errorObj.Set("code", rt.ToValue(result.connectErr.Code().String())))
+			must(rt, errorObj.Set("message", rt.ToValue(message)))
 
 			// Serialize error details
 			details := result.connectErr.Details()
@@ -717,22 +714,22 @@ func (c *Client) convertRPCResultToObject(result *rpcResult) *sobek.Object {
 
 				serializedDetails[i] = serializedDetail
 			}
-			errorObj.Set("details", rt.ToValue(serializedDetails))
+			must(rt, errorObj.Set("details", rt.ToValue(serializedDetails)))
 
-			responseObject.Set("message", errorObj)
+			must(rt, responseObject.Set("message", errorObj))
 		} else {
 			// Non-Connect error
 			message = result.err.Error()
 
 			errorObj := rt.NewObject()
-			errorObj.Set("message", rt.ToValue(message))
+			must(rt, errorObj.Set("message", rt.ToValue(message)))
 
-			responseObject.Set("message", errorObj)
+			must(rt, responseObject.Set("message", errorObj))
 		}
 
-		responseObject.Set("status", rt.ToValue(result.httpStatus))
-		responseObject.Set("headers", rt.ToValue(result.headers))
-		responseObject.Set("trailers", rt.ToValue(result.trailers))
+		must(rt, responseObject.Set("status", rt.ToValue(result.httpStatus)))
+		must(rt, responseObject.Set("headers", rt.ToValue(result.headers)))
+		must(rt, responseObject.Set("trailers", rt.ToValue(result.trailers)))
 
 		return responseObject
 	}
@@ -742,20 +739,20 @@ func (c *Client) convertRPCResultToObject(result *rpcResult) *sobek.Object {
 	if err != nil {
 		// If we can't parse the JSON, create an error response
 		errorObj := rt.NewObject()
-		errorObj.Set("message", rt.ToValue(fmt.Sprintf("Failed to parse response JSON: %v", err)))
+		must(rt, errorObj.Set("message", rt.ToValue(fmt.Sprintf("Failed to parse response JSON: %v", err))))
 
-		responseObject.Set("message", errorObj)
-		responseObject.Set("status", rt.ToValue(500))
-		responseObject.Set("headers", rt.ToValue(result.headers))
-		responseObject.Set("trailers", rt.ToValue(result.trailers))
+		must(rt, responseObject.Set("message", errorObj))
+		must(rt, responseObject.Set("status", rt.ToValue(500)))
+		must(rt, responseObject.Set("headers", rt.ToValue(result.headers)))
+		must(rt, responseObject.Set("trailers", rt.ToValue(result.trailers)))
 
 		return responseObject
 	}
 
-	responseObject.Set("message", messageVal)
-	responseObject.Set("status", rt.ToValue(result.httpStatus))
-	responseObject.Set("headers", rt.ToValue(result.headers))
-	responseObject.Set("trailers", rt.ToValue(result.trailers))
+	must(rt, responseObject.Set("message", messageVal))
+	must(rt, responseObject.Set("status", rt.ToValue(result.httpStatus)))
+	must(rt, responseObject.Set("headers", rt.ToValue(result.headers)))
+	must(rt, responseObject.Set("trailers", rt.ToValue(result.trailers)))
 
 	return responseObject
 }
@@ -767,44 +764,6 @@ type MethodInfo struct {
 	FullMethod     string
 	IsClientStream bool `json:"isClientStream"`
 	IsServerStream bool `json:"isServerStream"`
-}
-
-func (c *Client) convertToMethodInfo(fdset *descriptorpb.FileDescriptorSet) ([]MethodInfo, error) {
-	files, err := protodesc.NewFiles(fdset)
-	if err != nil {
-		return nil, err
-	}
-	var rtn []MethodInfo
-
-	appendMethodInfo := func(
-		fd protoreflect.FileDescriptor,
-		sd protoreflect.ServiceDescriptor,
-		md protoreflect.MethodDescriptor,
-	) {
-		name := fmt.Sprintf("/%s/%s", sd.FullName(), md.Name())
-		rtn = append(rtn, MethodInfo{
-			Package:        string(fd.Package()),
-			Service:        string(sd.Name()),
-			FullMethod:     name,
-			IsClientStream: md.IsStreamingClient(),
-			IsServerStream: md.IsStreamingServer(),
-		})
-	}
-
-	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		services := fd.Services()
-		for i := 0; i < services.Len(); i++ {
-			sd := services.Get(i)
-			methods := sd.Methods()
-			for j := 0; j < methods.Len(); j++ {
-				md := methods.Get(j)
-				appendMethodInfo(fd, sd, md)
-			}
-		}
-		return true
-	})
-
-	return rtn, nil
 }
 
 // getMethodDescriptor sanitizes and gets ConnectRPC method descriptor or an error if not found

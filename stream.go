@@ -35,10 +35,6 @@ const (
 	closed
 )
 
-const (
-	timestampMetadata = "ts"
-)
-
 type stream struct {
 	vu     modules.VU
 	client *Client
@@ -292,7 +288,7 @@ func (s *stream) writeLoop() {
 					default:
 						// No more pending messages
 						if s.connectStream != nil {
-							s.connectStream.CloseRequest() // Use the official API
+							_ = s.connectStream.CloseRequest() // Use the official API
 						}
 						return
 					}
@@ -467,14 +463,14 @@ func (s *stream) emitError(err error) {
 		if connectErr := new(connect.Error); errors.As(err, &connectErr) {
 			// Create error object for connect.Error
 			errorObj := rt.NewObject()
-			errorObj.Set("code", rt.ToValue(connectErr.Code().String()))
-			errorObj.Set("message", rt.ToValue(connectErr.Error()))
-			errorObj.Set("details", rt.ToValue(connectErr.Details()))
+			must(rt, errorObj.Set("code", rt.ToValue(connectErr.Code().String())))
+			must(rt, errorObj.Set("message", rt.ToValue(connectErr.Error())))
+			must(rt, errorObj.Set("details", rt.ToValue(connectErr.Details())))
 			errValue = errorObj
 		} else {
 			// Fallback for generic errors
 			errorObj := rt.NewObject()
-			errorObj.Set("message", err.Error())
+			must(rt, errorObj.Set("message", err.Error()))
 			errValue = errorObj
 		}
 
@@ -542,9 +538,9 @@ func (el *eventListeners) emit(event string, data sobek.Value) {
 	for _, listener := range listeners {
 		if fn, ok := sobek.AssertFunction(listener); ok {
 			if data != nil {
-				fn(sobek.Undefined(), data)
+				_, _ = fn(sobek.Undefined(), data)
 			} else {
-				fn(sobek.Undefined())
+				_, _ = fn(sobek.Undefined())
 			}
 		}
 	}

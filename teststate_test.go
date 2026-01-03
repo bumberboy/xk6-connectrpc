@@ -24,15 +24,6 @@ import (
 
 const isWindows = runtime.GOOS == "windows"
 
-// codeBlock represents an execution of a k6 script.
-type codeBlock struct {
-	code       string
-	val        interface{}
-	err        string
-	windowsErr string
-	asserts    func(*testing.T, *httpmultibin.HTTPMultiBin, chan metrics.SampleContainer, error)
-}
-
 // callRecorder a helper type that records all calls
 type callRecorder struct {
 	sync.Mutex
