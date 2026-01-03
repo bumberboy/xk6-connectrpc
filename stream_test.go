@@ -1064,52 +1064,58 @@ func TestStreamIntegrationWithServer(t *testing.T) {
 	t.Run("BidirectionalStreamingWithHeaders", func(t *testing.T) {
 		// Test that headers are actually sent and bidirectional streaming works
 		val, err := ts.Run(`
-			var client = new connectrpc.Client();
-			client.connect('` + srv.URL + `', {
-				protocol: 'connect',
-				plaintext: true
-			});
-			
-			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum', {
-				headers: {
-					'client-header': 'some-value'  // This header will be validated by server
-				}
-			});
-			
-			var receivedData = [];
-			var streamEnded = false;
-			var streamError = null;
-			
-			stream.on('data', function(data) {
-				receivedData.push(data);
-			});
-			
-			stream.on('end', function() {
-				streamEnded = true;
-			});
-			
-			stream.on('error', function(error) {
-				streamError = error;
-			});
-			
-			// Send numbers and expect cumulative sum responses
-			stream.write({ number: 5 });   // Should get back {sum: 5}
-			stream.write({ number: 10 });  // Should get back {sum: 15}
-			stream.write({ number: 3 });   // Should get back {sum: 18}
-			stream.end();
-			
-			// Wait a bit for responses (this is a limitation of the test framework)
-			// In real scenarios, the events would fire asynchronously
-			
-			({
-				receivedCount: receivedData.length,
-				streamEnded: streamEnded,
-				hasError: streamError !== null,
-				lastSum: receivedData.length > 0 ? receivedData[receivedData.length - 1].sum : null
-			});
+			(async function() {
+				var client = new connectrpc.Client();
+				client.connect('` + srv.URL + `', {
+					protocol: 'connect',
+					plaintext: true
+				});
+				
+				var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum', {
+					headers: {
+						'client-header': 'some-value'  // This header will be validated by server
+					}
+				});
+				
+				var receivedData = [];
+				var streamEnded = false;
+				var streamError = null;
+				var completed = new Promise(function(resolve, reject) {
+					stream.on('end', function() {
+						streamEnded = true;
+						resolve();
+					});
+					
+					stream.on('error', function(error) {
+						streamError = error;
+						var message = error && error.message ? error.message : String(error);
+						reject(new Error(message));
+					});
+				});
+				
+				stream.on('data', function(data) {
+					receivedData.push(data);
+				});
+				
+				// Send numbers and expect cumulative sum responses
+				stream.write({ number: 5 });   // Should get back {sum: 5}
+				stream.write({ number: 10 });  // Should get back {sum: 15}
+				stream.write({ number: 3 });   // Should get back {sum: 18}
+				stream.end();
+				
+				await completed;
+				client.close();
+				
+				return {
+					receivedCount: receivedData.length,
+					streamEnded: streamEnded,
+					hasError: streamError !== null,
+					lastSum: receivedData.length > 0 ? receivedData[receivedData.length - 1].sum : null
+				};
+			})();
 		`)
 
-		assert.NoError(t, err, "Bidirectional streaming with headers should work")
+		require.NoError(t, err, "Bidirectional streaming with headers should work")
 
 		result := val.Export().(map[string]interface{})
 		assert.False(t, result["hasError"].(bool), "Should not have streaming errors")
