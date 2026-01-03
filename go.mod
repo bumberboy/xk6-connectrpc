@@ -8,7 +8,7 @@ require (
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/grafana/sobek v0.0.0-20251124090928-9a028a30ff58
-	github.com/klauspost/compress v1.18.1
+	github.com/klauspost/compress v1.18.2
 	github.com/mccutchen/go-httpbin/v2 v2.19.0
 	github.com/mstoykov/k6-taskqueue-lib v0.1.3
 	github.com/sirupsen/logrus v1.9.3
