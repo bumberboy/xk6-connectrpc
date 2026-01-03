@@ -142,42 +142,56 @@ func TestStreamEnvelopeFraming(t *testing.T) {
 
 		// Test the message envelope framing mechanism
 		_, err = ts.Run(`
-			var client = new connectrpc.Client();
-			client.connect('` + srv.URL + `', {
-				protocol: 'connect',
-				plaintext: true
-			});
-			
-			var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
-			
-			var writeOperationsCompleted = 0;
-			
-			// Test message envelope framing by writing structured data
-			try {
-				var testMessage1 = { number: 5 };
-				var testMessage2 = { number: 10 };
-				var testMessage3 = { number: 15 };
+			(async function() {
+				var client = new connectrpc.Client();
+				client.connect('` + srv.URL + `', {
+					protocol: 'connect',
+					plaintext: true
+				});
 				
-				// Each write should properly frame the message as JSON -> protobuf
-				stream.write(testMessage1);
-				writeOperationsCompleted++;
+				var stream = new connectrpc.Stream(client, '/k6.connectrpc.ping.v1.PingService/CumSum');
 				
-				stream.write(testMessage2);
-				writeOperationsCompleted++;
+				var writeOperationsCompleted = 0;
+				var completed = new Promise(function(resolve, reject) {
+					stream.on('end', function() {
+						resolve();
+					});
+					
+					stream.on('error', function(error) {
+						var message = error && error.message ? error.message : String(error);
+						reject(new Error(message));
+					});
+				});
 				
-				stream.write(testMessage3);
-				writeOperationsCompleted++;
+				// Test message envelope framing by writing structured data
+				try {
+					var testMessage1 = { number: 5 };
+					var testMessage2 = { number: 10 };
+					var testMessage3 = { number: 15 };
+					
+					// Each write should properly frame the message as JSON -> protobuf
+					stream.write(testMessage1);
+					writeOperationsCompleted++;
+					
+					stream.write(testMessage2);
+					writeOperationsCompleted++;
+					
+					stream.write(testMessage3);
+					writeOperationsCompleted++;
+					
+					// Test ending the stream (closes the envelope)
+					stream.end();
+					writeOperationsCompleted++;
+					
+				} catch (e) {
+					// Write operations should not throw during envelope preparation
+					throw new Error('Write operation failed: ' + e.message);
+				}
 				
-				// Test ending the stream (closes the envelope)
-				stream.end();
-				writeOperationsCompleted++;
-				
-			} catch (e) {
-				// Write operations should not throw during envelope preparation
-				throw new Error('Write operation failed: ' + e.message);
-			}
-			
-			writeOperationsCompleted;
+				await completed;
+				client.close();
+				return writeOperationsCompleted;
+			})();
 		`)
 
 		assert.NoError(t, err, "Message envelope framing should work without errors")
