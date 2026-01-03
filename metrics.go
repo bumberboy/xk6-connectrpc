@@ -281,62 +281,6 @@ func (m *instanceMetrics) recordStreamMessage(ctx context.Context, vu modules.VU
 	})
 }
 
-// recordConnection records connection establishment metrics
-func (m *instanceMetrics) recordConnection(ctx context.Context, vu modules.VU,
-	duration time.Duration, url string, err error) {
-
-	state := vu.State()
-	if state == nil {
-		return
-	}
-
-	ctm := state.Tags.GetCurrentValues()
-	ctm.SetTag("url", url)
-
-	if err != nil {
-		ctm.SetTag("status", "error")
-		// Record connection error
-		metrics.PushIfNotDone(ctx, state.Samples, metrics.Sample{
-			TimeSeries: metrics.TimeSeries{
-				Metric: m.ConnectRPCConnectionErrors,
-				Tags:   ctm.Tags,
-			},
-			Time:     time.Now(),
-			Metadata: ctm.Metadata,
-			Value:    1,
-		})
-	} else {
-		ctm.SetTag("status", "success")
-	}
-
-	// Record connection count and duration
-	now := time.Now()
-	metrics.PushIfNotDone(ctx, state.Samples, metrics.ConnectedSamples{
-		Samples: []metrics.Sample{
-			{
-				TimeSeries: metrics.TimeSeries{
-					Metric: m.ConnectRPCConnections,
-					Tags:   ctm.Tags,
-				},
-				Time:     now,
-				Metadata: ctm.Metadata,
-				Value:    1,
-			},
-			{
-				TimeSeries: metrics.TimeSeries{
-					Metric: m.ConnectRPCConnectionDuration,
-					Tags:   ctm.Tags,
-				},
-				Time:     now,
-				Metadata: ctm.Metadata,
-				Value:    metrics.D(duration),
-			},
-		},
-		Tags: ctm.Tags,
-		Time: now,
-	})
-}
-
 // recordHTTPConnection records metrics for HTTP connection establishment or reuse
 func (m *instanceMetrics) recordHTTPConnection(ctx context.Context, vu modules.VU,
 	url string, isNewConnection bool, handshakeDuration time.Duration) {

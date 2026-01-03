@@ -1,27 +1,11 @@
 package connectrpc_test
 
 import (
-	"context"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/bumberboy/xk6-connectrpc"
-	pingv1 "github.com/bumberboy/xk6-connectrpc/testdata/ping/v1"
-	"github.com/bumberboy/xk6-connectrpc/testdata/ping/v1/pingv1connect"
 	"github.com/stretchr/testify/require"
 )
-
-// simplePingServer implements the ping service for HTTP method testing
-type simplePingServer struct {
-	pingv1connect.UnimplementedPingServiceHandler
-}
-
-func (s *simplePingServer) Ping(ctx context.Context, req *connect.Request[pingv1.PingRequest]) (*connect.Response[pingv1.PingResponse], error) {
-	return connect.NewResponse(&pingv1.PingResponse{
-		Number: req.Msg.GetNumber(),
-		Text:   req.Msg.GetText(),
-	}), nil
-}
 
 // TestIntegrationBasicPingWithServer tests basic functionality using our test server
 func TestIntegrationBasicPingWithServer(t *testing.T) {
