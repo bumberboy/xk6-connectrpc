@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":gomod",
+    ":semanticCommits"
+  ],
+  "schedule": ["before 9am on monday"],
+  "timezone": "UTC",
+  "labels": ["dependencies"],
+  "golang": {
+    "enabled": true
+  },
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "description": "Group Go version updates",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang"],
+      "groupName": "Go version",
+      "automerge": false
+    },
+    {
+      "description": "Group k6 ecosystem updates",
+      "matchPackagePatterns": ["^go\\.k6\\.io/"],
+      "groupName": "k6 ecosystem"
+    },
+    {
+      "description": "Group gRPC and Connect ecosystem updates",
+      "matchPackagePatterns": [
+        "^google\\.golang\\.org/grpc",
+        "^google\\.golang\\.org/protobuf",
+        "^connectrpc\\.com/"
+      ],
+      "groupName": "gRPC/Connect ecosystem"
+    },
+    {
+      "description": "Group OpenTelemetry updates",
+      "matchPackagePatterns": ["^go\\.opentelemetry\\.io/"],
+      "groupName": "OpenTelemetry"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Auto-merge patch updates for test dependencies",
+      "matchPackagePatterns": ["^github\\.com/stretchr/testify"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge minor and patch updates for GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ],
+  "ignorePaths": ["**/testdata/**"]
+}
