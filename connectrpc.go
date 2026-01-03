@@ -216,6 +216,7 @@ func (mi *ModuleInstance) stream(c sobek.ConstructorCall) *sobek.Object {
 		writingState:    opened,
 
 		writeQueueCh: make(chan message),
+		readLoopDone: make(chan struct{}),
 
 		eventListeners: newEventListeners(),
 		obj:            rt.NewObject(),

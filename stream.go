@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -71,6 +72,11 @@ type stream struct {
 
 	// Ensure readLoop starts only once, after the first successful send
 	startReadLoopOnce sync.Once
+
+	// Track read loop lifecycle for safe shutdown ordering
+	readLoopStarted atomic.Bool
+	readLoopDone    chan struct{}
+	closeQueueOnce  sync.Once
 }
 
 // defineStream defines the sobek.Object that is given to js to interact with the Stream
@@ -327,6 +333,7 @@ func (s *stream) processMessage(msg message) {
 	// Start readLoop after the first successful send - this ensures the connection
 	// is established before we try to receive (avoiding race conditions)
 	s.startReadLoopOnce.Do(func() {
+		s.readLoopStarted.Store(true)
 		go s.readLoop()
 	})
 
@@ -347,6 +354,7 @@ func (s *stream) processMessage(msg message) {
 
 // readLoop handles reading messages from the stream
 func (s *stream) readLoop() {
+	defer close(s.readLoopDone)
 	// Note: We don't defer s.shutdown() here because read errors shouldn't
 	// prevent writes from continuing. Shutdown is called from writeLoop
 	// when the write side is intentionally closed (via end()), or from
@@ -517,9 +525,23 @@ func (s *stream) shutdown() {
 		close(s.done)
 	}
 
-	if s.tq != nil {
-		s.tq.Close()
+	if s.readLoopStarted.Load() {
+		go func() {
+			<-s.readLoopDone
+			s.closeTaskQueue()
+		}()
+		return
 	}
+
+	s.closeTaskQueue()
+}
+
+func (s *stream) closeTaskQueue() {
+	s.closeQueueOnce.Do(func() {
+		if s.tq != nil {
+			s.tq.Close()
+		}
+	})
 }
 
 // eventListeners manages event listeners for the stream
