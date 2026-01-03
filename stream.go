@@ -294,6 +294,7 @@ func (s *stream) writeLoop() {
 						if s.connectStream != nil {
 							_ = s.connectStream.CloseRequest() // Use the official API
 						}
+						s.shutdown()
 						return
 					}
 				}
@@ -346,7 +347,10 @@ func (s *stream) processMessage(msg message) {
 
 // readLoop handles reading messages from the stream
 func (s *stream) readLoop() {
-	defer s.shutdown()
+	// Note: We don't defer s.shutdown() here because read errors shouldn't
+	// prevent writes from continuing. Shutdown is called from writeLoop
+	// when the write side is intentionally closed (via end()), or from
+	// close() when the entire stream is terminated.
 
 	for {
 		res, err := s.connectStream.Receive()
