@@ -17,6 +17,7 @@ import (
 	"connectrpc.com/connect"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
+	"golang.org/x/net/http2"
 
 	"github.com/grafana/sobek"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -126,11 +127,42 @@ func (c *Client) createHTTPClient(p *connectParams, hostname string) (*http.Clie
 		}
 		transport.TLSClientConfig = tlsCfg
 	} else {
-		// For plaintext HTTP/2 (h2c)
+		// For plaintext connections
 		transport.TLSClientConfig = nil
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, network, addr)
+		}
+
+		// For HTTP/2 over plaintext (h2c), we need to use http2.Transport directly
+		// The standard http.Transport with ForceAttemptHTTP2 only works with TLS
+		if p.HTTPVersion == "2" || p.HTTPVersion == "auto" {
+			// Create an http2.Transport for h2c (HTTP/2 Cleartext / Prior Knowledge)
+			h2cTransport := &http2.Transport{
+				AllowHTTP: true,
+				DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+					// For h2c, we dial without TLS
+					var d net.Dialer
+					return d.DialContext(ctx, network, addr)
+				},
+			}
+
+			// Create HTTP client with h2c transport wrapped in connection tracking
+			timeout := time.Duration(0)
+			if p.Timeout != nil {
+				timeout = *p.Timeout
+			}
+
+			trackingTransport := &connectionTrackingTransport{
+				base:    h2cTransport,
+				client:  c,
+				baseURL: c.baseURL,
+			}
+
+			return &http.Client{
+				Transport: trackingTransport,
+				Timeout:   timeout,
+			}, nil
 		}
 	}
 
