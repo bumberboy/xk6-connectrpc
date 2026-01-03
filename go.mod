@@ -9,7 +9,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/grafana/sobek v0.0.0-20251113105955-976a34df9c09
 	github.com/klauspost/compress v1.18.1
-	github.com/mccutchen/go-httpbin v1.1.2-0.20190116014521-c5cb2f4802fa
+	github.com/mccutchen/go-httpbin v1.1.1
+	github.com/mccutchen/go-httpbin/v2 v2.19.0
 	github.com/mstoykov/k6-taskqueue-lib v0.1.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
