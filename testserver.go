@@ -11,6 +11,8 @@ import (
 	"connectrpc.com/connect"
 	pingv1 "github.com/bumberboy/xk6-connectrpc/testdata/ping/v1"
 	"github.com/bumberboy/xk6-connectrpc/testdata/ping/v1/pingv1connect"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 const (
@@ -205,7 +207,8 @@ func newTestServer(checkMetadata bool) *httptest.Server {
 	path, handler := pingv1connect.NewPingServiceHandler(server)
 	mux.Handle(path, handler)
 
-	return httptest.NewServer(mux)
+	h2s := &http2.Server{}
+	return httptest.NewServer(h2c.NewHandler(mux, h2s))
 }
 
 func newTLSTestServer(checkMetadata bool) *httptest.Server {
