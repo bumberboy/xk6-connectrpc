@@ -72,6 +72,9 @@ type stream struct {
 
 	// Track if stream was explicitly closed
 	explicitlyClosed bool
+
+	// Ensure readLoop starts only once, after the first successful send
+	startReadLoopOnce sync.Once
 }
 
 // defineStream defines the sobek.Object that is given to js to interact with the Stream
@@ -180,9 +183,10 @@ func (s *stream) beginStream(p *callParams) error {
 		s.connectStream.RequestHeader().Set(key, value)
 	}
 
-	// Start goroutines - the connection will be initiated on the first s.connectStream.Send()
+	// Start writeLoop goroutine - the connection will be initiated on the first s.connectStream.Send()
+	// Note: readLoop is started after the first successful Send() to avoid race conditions
+	// where readLoop fails before any writes happen (the connection isn't established until first Send)
 	go s.writeLoop()
-	go s.readLoop()
 
 	// Record stream start metrics
 	if s.instanceMetrics != nil {
@@ -322,6 +326,12 @@ func (s *stream) processMessage(msg message) {
 		s.shutdown()
 		return
 	}
+
+	// Start readLoop after the first successful send - this ensures the connection
+	// is established before we try to receive (avoiding race conditions)
+	s.startReadLoopOnce.Do(func() {
+		go s.readLoop()
+	})
 
 	// Record sent message metrics
 	if s.instanceMetrics != nil {
