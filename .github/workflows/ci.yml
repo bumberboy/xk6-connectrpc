@@ -77,23 +77,3 @@ jobs:
 
       - name: Verify binary
         run: ./k6 version
-
-  build-protoc-plugin:
-    name: Build Protoc Plugin
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: protoc-gen-k6-connectrpc
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'protoc-gen-k6-connectrpc/go.mod'
-
-      - name: Verify dependencies
-        run: go mod verify
-
-      - name: Build plugin
-        run: go build -o protoc-gen-k6-connectrpc .

@@ -21,7 +21,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/zstd"
-	"github.com/mccutchen/go-httpbin/httpbin"
+	"github.com/mccutchen/go-httpbin/v2/httpbin"
 	"github.com/stretchr/testify/require"
 	"go.k6.io/k6/lib/netext"
 	"go.k6.io/k6/lib/types"
