@@ -77,6 +77,16 @@ type stream struct {
 	readLoopStarted atomic.Bool
 	readLoopDone    chan struct{}
 	closeQueueOnce  sync.Once
+
+	// Synchronous read support - channel for received messages
+	recvCh       chan *recvResult
+	recvChClosed atomic.Bool
+}
+
+// recvResult holds either a received message or an error
+type recvResult struct {
+	data []byte
+	err  error
 }
 
 // defineStream defines the sobek.Object that is given to js to interact with the Stream
@@ -92,6 +102,9 @@ func defineStream(rt *sobek.Runtime, s *stream) {
 
 	must(rt, s.obj.DefineDataProperty(
 		"close", rt.ToValue(s.close), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+
+	must(rt, s.obj.DefineDataProperty(
+		"read", rt.ToValue(s.read), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 }
 
 func (s *stream) beginStream(p *callParams) error {
@@ -281,6 +294,54 @@ func (s *stream) close() {
 	s.shutdown()
 }
 
+// read synchronously reads the next message from the stream.
+// Returns the message data as a JS object, or null if the stream has ended.
+// Throws an error if there was a stream error.
+//
+// Usage (JavaScript):
+//
+//	while (true) {
+//	  const msg = stream.read();  // blocks until message available
+//	  if (msg === null) break;    // null = stream ended
+//	  // process msg...
+//	}
+//
+// NOTE: This method blocks the k6 VU until a message is available.
+// Use in a tight loop for best performance. Avoid heavy processing
+// between read() calls to prevent buffer overflow on high-volume streams.
+func (s *stream) read() sobek.Value {
+	rt := s.vu.Runtime()
+	if rt == nil {
+		return sobek.Null()
+	}
+
+	// Wait for a message from the receive channel
+	// Note: We only wait on recvCh, not s.done, because:
+	// - recvCh will be closed when readLoop exits (via closeRecvCh)
+	// - s.done may be closed before all messages are consumed
+	result, ok := <-s.recvCh
+	if !ok {
+		// Channel closed, stream ended
+		return sobek.Null()
+	}
+	if result.err != nil {
+		// Stream error
+		common.Throw(rt, result.err)
+		return sobek.Null()
+	}
+	if result.data == nil {
+		// End of stream signal
+		return sobek.Null()
+	}
+	// Parse JSON and return as JS object
+	var parsed interface{}
+	if err := json.Unmarshal(result.data, &parsed); err != nil {
+		// If JSON parsing fails, return as string
+		return rt.ToValue(string(result.data))
+	}
+	return rt.ToValue(parsed)
+}
+
 // writeLoop handles writing messages to the stream
 func (s *stream) writeLoop() {
 	for {
@@ -355,6 +416,7 @@ func (s *stream) processMessage(msg message) {
 // readLoop handles reading messages from the stream
 func (s *stream) readLoop() {
 	defer close(s.readLoopDone)
+	defer s.closeRecvCh()
 	// Note: We don't defer s.shutdown() here because read errors shouldn't
 	// prevent writes from continuing. Shutdown is called from writeLoop
 	// when the write side is intentionally closed (via end()), or from
@@ -365,6 +427,7 @@ func (s *stream) readLoop() {
 		if err != nil {
 			// Check for normal EOF (direct or Connect-wrapped)
 			if errors.Is(err, io.EOF) {
+				s.sendToRecvCh(nil, nil) // Signal end of stream
 				s.emitEnd()
 				return
 			}
@@ -372,6 +435,7 @@ func (s *stream) readLoop() {
 			// Check for Connect-wrapped EOF errors
 			if connectErr := new(connect.Error); errors.As(err, &connectErr) {
 				if strings.Contains(connectErr.Message(), "EOF") {
+					s.sendToRecvCh(nil, nil) // Signal end of stream
 					s.emitEnd()
 					return
 				}
@@ -381,6 +445,7 @@ func (s *stream) readLoop() {
 			if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled") {
 				if s.explicitlyClosed {
 					// This was an explicit close(), emit end instead of error
+					s.sendToRecvCh(nil, nil) // Signal end of stream
 					s.emitEnd()
 					return
 				}
@@ -391,6 +456,7 @@ func (s *stream) readLoop() {
 				if connectErr.Code().String() == "canceled" || strings.Contains(connectErr.Message(), "context canceled") {
 					if s.explicitlyClosed {
 						// This was an explicit close(), emit end instead of error
+						s.sendToRecvCh(nil, nil) // Signal end of stream
 						s.emitEnd()
 						return
 					}
@@ -398,16 +464,21 @@ func (s *stream) readLoop() {
 			}
 
 			s.logger.WithError(err).Error("Failed to read from stream")
-			s.emitError(err) // This will now be a connect.Error
+			s.sendToRecvCh(nil, err) // Send error
+			s.emitError(err)         // This will now be a connect.Error
 			return
 		}
 
 		// res is already a dynamicpb.Message, marshal it directly.
 		jsonBytes, err := protojson.Marshal(res)
 		if err != nil {
+			s.sendToRecvCh(nil, err) // Send error
 			s.emitError(err)
 			return
 		}
+
+		// Send to recvCh for synchronous read() calls
+		s.sendToRecvCh(jsonBytes, nil)
 
 		// Record received message metrics
 		if s.instanceMetrics != nil {
@@ -425,6 +496,28 @@ func (s *stream) readLoop() {
 
 		// emitData now receives JSON bytes instead of raw bytes
 		s.emitData(jsonBytes)
+	}
+}
+
+// sendToRecvCh sends a result to the receive channel for synchronous reads.
+// Blocks if channel is full (backpressure) - ensures no messages are dropped.
+func (s *stream) sendToRecvCh(data []byte, err error) {
+	if s.recvChClosed.Load() {
+		return
+	}
+	select {
+	case s.recvCh <- &recvResult{data: data, err: err}:
+		// Message sent successfully
+	case <-s.done:
+		// Stream is shutting down, don't block forever
+		return
+	}
+}
+
+// closeRecvCh closes the receive channel safely
+func (s *stream) closeRecvCh() {
+	if s.recvChClosed.CompareAndSwap(false, true) {
+		close(s.recvCh)
 	}
 }
 
