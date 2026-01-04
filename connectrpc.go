@@ -217,6 +217,25 @@ func (mi *ModuleInstance) stream(c sobek.ConstructorCall) *sobek.Object {
 
 		writeQueueCh: make(chan message),
 		readLoopDone: make(chan struct{}),
+		// recvCh: Buffered channel for synchronous stream.read() calls.
+		//
+		// Buffer size: 4096 messages
+		//
+		// IMPORTANT: This assumes users consume messages in a tight read loop:
+		//   while (true) {
+		//     const msg = stream.read();
+		//     if (msg === null) break;
+		//     // minimal processing here
+		//   }
+		//
+		// Limitations:
+		// - If the server sends messages faster than the client reads them,
+		//   the buffer will fill up and sendToRecvCh() will block (backpressure).
+		// - If the stream is closed (s.done) while the buffer is full, messages
+		//   in flight may be dropped.
+		// - For very high-volume streams (>4096 messages in a burst before client
+		//   starts reading), consider increasing this buffer size.
+		recvCh: make(chan *recvResult, 4096),
 
 		eventListeners: newEventListeners(),
 		obj:            rt.NewObject(),
