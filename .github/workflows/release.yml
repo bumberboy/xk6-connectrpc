@@ -66,60 +66,9 @@ jobs:
           path: k6-connectrpc-*
           retention-days: 1
 
-  build-protoc-plugin:
-    name: Build Protoc Plugin (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-    defaults:
-      run:
-        working-directory: protoc-gen-k6-connectrpc
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'protoc-gen-k6-connectrpc/go.mod'
-
-      - name: Determine extension
-        id: ext
-        run: |
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            echo "ext=.exe" >> $GITHUB_OUTPUT
-          else
-            echo "ext=" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build protoc plugin
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          go build -o protoc-gen-k6-connectrpc-${{ matrix.goos }}-${{ matrix.goarch }}${{ steps.ext.outputs.ext }} .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: protoc-gen-k6-connectrpc-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: protoc-gen-k6-connectrpc/protoc-gen-k6-connectrpc-*
-          retention-days: 1
-
   release:
     name: Create Release
-    needs: [build, build-protoc-plugin]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,14 +85,15 @@ jobs:
       - name: Create checksums
         working-directory: dist
         run: |
-          sha256sum * > checksums.txt
+          sha256sum k6-connectrpc-* > checksums.txt
           cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*
+            dist/k6-connectrpc-*
+            dist/checksums.txt
           generate_release_notes: true
           draft: false
           fail_on_unmatched_files: true
