@@ -1,6 +1,6 @@
 module github.com/bumberboy/xk6-connectrpc
 
-go 1.24.1
+go 1.26
 
 require (
 	connectrpc.com/connect v1.19.1
@@ -28,7 +28,7 @@ require (
 	github.com/evanw/esbuild v0.27.2 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
