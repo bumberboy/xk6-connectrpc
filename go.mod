@@ -1,6 +1,6 @@
 module github.com/bumberboy/xk6-connectrpc
 
-go 1.24.1
+go 1.25.0
 
 require (
 	connectrpc.com/connect v1.19.1
@@ -15,7 +15,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.k6.io/k6 v1.4.2
 	golang.org/x/net v0.48.0
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/guregu/null.v3 v3.5.0
 )
@@ -63,8 +63,8 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260622175928-b703f567277d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
