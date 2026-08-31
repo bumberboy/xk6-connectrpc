@@ -4,7 +4,7 @@ go 1.24.1
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/andybalholm/brotli v1.2.0
+	github.com/andybalholm/brotli v1.2.3
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/grafana/sobek v0.0.0-20260121195222-d8d9202018c5
